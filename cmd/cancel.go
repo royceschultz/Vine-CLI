@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +39,19 @@ var cancelCmd = &cobra.Command{
 
 			if task.Status == "done" {
 				return fmt.Errorf("task %q is already done — cannot cancel", arg)
+			}
+
+			incomplete, err := s.IncompleteChildTasks(bareID)
+			if err != nil {
+				return err
+			}
+			if len(incomplete) > 0 {
+				lines := make([]string, len(incomplete))
+				for i, c := range incomplete {
+					lines[i] = fmt.Sprintf("  %s %s", utils.FormatTaskID(projectName, c.ID), c.Name)
+				}
+				return fmt.Errorf("cannot cancel %s — %d incomplete subtask(s):\n%s",
+					utils.FormatTaskID(projectName, task.ID), len(incomplete), strings.Join(lines, "\n"))
 			}
 
 			updated, err := s.UpdateTaskStatus(bareID, "cancelled")

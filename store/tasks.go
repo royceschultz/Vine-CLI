@@ -342,6 +342,18 @@ func (s *Store) AncestorChain(taskID string) ([]Task, error) {
 	return chain, nil
 }
 
+// IncompleteChildTasks returns direct children that are not done or cancelled.
+func (s *Store) IncompleteChildTasks(parentID string) ([]Task, error) {
+	var tasks []Task
+	err := s.db.Select(&tasks,
+		"SELECT * FROM tasks WHERE parent_id = ? AND status NOT IN ('done', 'cancelled') ORDER BY created_at",
+		parentID)
+	if err != nil {
+		return nil, fmt.Errorf("listing incomplete children of task %s: %w", parentID, err)
+	}
+	return tasks, nil
+}
+
 // ChildCounts returns a map of task ID → number of direct children.
 // Only returns entries for tasks that have at least one child.
 func (s *Store) ChildCounts(taskIDs []string) (map[string]int, error) {
