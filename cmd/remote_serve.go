@@ -102,7 +102,42 @@ func runServe(cmd *cobra.Command, args []string) error {
 	return serveForeground(dir, pidPath, bind, port, token, tlsCert, tlsKey)
 }
 
+// serverConfig is persisted to ~/.vine/server.json so restart can use it.
+type serverConfig struct {
+	Port    int    `json:"port"`
+	Bind    string `json:"bind"`
+	Token   string `json:"token,omitempty"`
+	TLSCert string `json:"tls_cert,omitempty"`
+	TLSKey  string `json:"tls_key,omitempty"`
+}
+
+func saveServerConfig(dir string, cfg serverConfig) error {
+	data, _ := json.MarshalIndent(cfg, "", "  ")
+	return os.WriteFile(filepath.Join(dir, "server.json"), append(data, '\n'), 0o644)
+}
+
+func loadServerConfig(dir string) (*serverConfig, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "server.json"))
+	if err != nil {
+		return nil, err
+	}
+	var cfg serverConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
 func serveForeground(dir, pidPath, bind string, port int, token, tlsCert, tlsKey string) error {
+	// Save config for restart.
+	saveServerConfig(dir, serverConfig{
+		Port:    port,
+		Bind:    bind,
+		Token:   token,
+		TLSCert: tlsCert,
+		TLSKey:  tlsKey,
+	})
+
 	// Set up log file.
 	logPath := filepath.Join(dir, "server.log")
 	logFile, err := server.NewRotatingLog(logPath, 0, 0)
