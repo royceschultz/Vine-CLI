@@ -47,6 +47,9 @@ var doctorCmd = &cobra.Command{
 		// 5. Claude Code hooks (local or global settings).
 		checks = append(checks, checkClaudeHooks(cwd))
 
+		// 6. Vine home directory stats.
+		checks = append(checks, checkVineHome()...)
+
 		if IsJSON(cmd) {
 			PrintOutput(cmd, "", checks)
 			return nil
@@ -319,6 +322,117 @@ func checkSymlinks(cwd string, fix bool) []checkResult {
 		Detail: detail,
 		Fix:    "Run 'vine doctor --fix' or 'vine symlink create'.",
 	}}
+}
+
+func checkVineHome() []checkResult {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	vineHome := filepath.Join(home, ".vine")
+
+	if _, err := os.Stat(vineHome); os.IsNotExist(err) {
+		return []checkResult{{
+			Name:   "vine home (~/.vine)",
+			Status: "ok",
+			Detail: "Not yet created.",
+		}}
+	}
+
+	var results []checkResult
+
+	// Count global databases.
+	dbDir := filepath.Join(vineHome, "databases")
+	var dbCount int
+	var dbSize int64
+	if entries, err := os.ReadDir(dbDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && filepath.Ext(e.Name()) == ".db" {
+				dbCount++
+				if info, err := e.Info(); err == nil {
+					dbSize += info.Size()
+				}
+			}
+		}
+	}
+	results = append(results, checkResult{
+		Name:   "global databases",
+		Status: "ok",
+		Detail: fmt.Sprintf("%d databases (%s)", dbCount, formatSize(dbSize)),
+	})
+
+	// Server log size.
+	var logSize int64
+	var logCount int
+	logMatches, _ := filepath.Glob(filepath.Join(vineHome, "server.log*"))
+	for _, m := range logMatches {
+		if info, err := os.Stat(m); err == nil && !info.IsDir() {
+			logSize += info.Size()
+			logCount++
+		}
+	}
+	if logCount > 0 {
+		detail := fmt.Sprintf("%d file(s), %s", logCount, formatSize(logSize))
+		status := "ok"
+		fix := ""
+		if logSize > 10*1024*1024 {
+			status = "warn"
+			detail += " (consider running 'vine prune')"
+			fix = "vine prune"
+		}
+		results = append(results, checkResult{
+			Name:   "server logs",
+			Status: status,
+			Detail: detail,
+			Fix:    fix,
+		})
+	}
+
+	// PID file status.
+	pidPath := filepath.Join(vineHome, "server.pid")
+	if _, err := os.Stat(pidPath); err == nil {
+		pid, pidErr := readPID(pidPath)
+		if pidErr != nil {
+			results = append(results, checkResult{
+				Name:   "server PID file",
+				Status: "warn",
+				Detail: "PID file exists but is unreadable.",
+				Fix:    "vine prune",
+			})
+		} else if !processExists(pid) {
+			results = append(results, checkResult{
+				Name:   "server PID file",
+				Status: "warn",
+				Detail: fmt.Sprintf("Stale PID file (PID %d is not running).", pid),
+				Fix:    "vine prune",
+			})
+		} else {
+			results = append(results, checkResult{
+				Name:   "server PID file",
+				Status: "ok",
+				Detail: fmt.Sprintf("Server running (PID %d).", pid),
+			})
+		}
+	}
+
+	// Total ~/.vine size.
+	var totalSize int64
+	filepath.Walk(vineHome, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() {
+			totalSize += info.Size()
+		}
+		return nil
+	})
+	results = append(results, checkResult{
+		Name:   "vine home (~/.vine)",
+		Status: "ok",
+		Detail: fmt.Sprintf("Total: %s", formatSize(totalSize)),
+	})
+
+	return results
 }
 
 func init() {
