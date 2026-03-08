@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"vine/client"
 	"vine/store"
 	"vine/utils"
 )
@@ -14,11 +15,15 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show a general summary of all tasks",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := GetStore(cmd)
 		detailed, _ := cmd.Flags().GetBool("detailed")
-
 		projectName := getProjectName(cmd)
 
+		if IsRemote(cmd) {
+			c, project := GetRemoteClient(cmd)
+			return statusRemote(cmd, c, project, projectName, detailed)
+		}
+
+		s := GetStore(cmd)
 		if detailed {
 			return statusDetailed(cmd, s, projectName)
 		}
@@ -103,6 +108,44 @@ func statusDetailed(cmd *cobra.Command, s *store.Store, project string) error {
 		label := utils.StatusColor(c.Status).Sprintf("%-14s", c.Status)
 		breakdown := formatTypeBreakdown(byStatus[c.Status])
 		fmt.Printf("  %s %d  %s\n", label, c.Count, utils.Dim(breakdown))
+	}
+
+	return nil
+}
+
+func statusRemote(cmd *cobra.Command, c *client.Client, project, projectName string, detailed bool) error {
+	resp, err := c.Status(project, detailed)
+	if err != nil {
+		return err
+	}
+
+	if IsJSON(cmd) {
+		PrintOutput(cmd, "", resp)
+		return nil
+	}
+
+	if resp.Total == 0 {
+		fmt.Printf("%s: no tasks yet\n", utils.Bold(projectName))
+		return nil
+	}
+
+	fmt.Printf("%s: %d tasks\n\n", utils.Bold(projectName), resp.Total)
+
+	if detailed && len(resp.Detailed) > 0 {
+		byStatus := make(map[string][]store.StatusTypeCount)
+		for _, d := range resp.Detailed {
+			byStatus[d.Status] = append(byStatus[d.Status], d)
+		}
+		for _, sc := range resp.Status {
+			label := utils.StatusColor(sc.Status).Sprintf("%-14s", sc.Status)
+			breakdown := formatTypeBreakdown(byStatus[sc.Status])
+			fmt.Printf("  %s %d  %s\n", label, sc.Count, utils.Dim(breakdown))
+		}
+	} else {
+		for _, sc := range resp.Status {
+			label := utils.StatusColor(sc.Status).Sprintf("%-14s", sc.Status)
+			fmt.Printf("  %s %d\n", label, sc.Count)
+		}
 	}
 
 	return nil

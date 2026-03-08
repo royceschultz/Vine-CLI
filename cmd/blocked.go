@@ -13,9 +13,16 @@ var blockedCmd = &cobra.Command{
 	Use:   "blocked",
 	Short: "List tasks that are blocked by dependencies",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := GetStore(cmd)
+		var tasks []store.Task
+		var err error
 
-		tasks, err := s.BlockedTasks()
+		if IsRemote(cmd) {
+			c, project := GetRemoteClient(cmd)
+			tasks, err = c.BlockedTasks(project)
+		} else {
+			s := GetStore(cmd)
+			tasks, err = s.BlockedTasks()
+		}
 		if err != nil {
 			return err
 		}
@@ -35,7 +42,12 @@ var blockedCmd = &cobra.Command{
 		}
 
 		projectName := getProjectName(cmd)
-		counts := collectChildCounts(s, tasks)
+
+		var counts map[string]int
+		if !IsRemote(cmd) {
+			s := GetStore(cmd)
+			counts = collectChildCounts(s, tasks)
+		}
 
 		fmt.Printf("%s blocked:\n\n", utils.Bold(fmt.Sprintf("%d", len(tasks))))
 		for _, t := range tasks {
@@ -45,18 +57,20 @@ var blockedCmd = &cobra.Command{
 				typeLabel = " " + utils.Dim("["+t.Type+"]")
 			}
 
-			// Show what's blocking this task.
-			deps, _ := s.DependenciesOf(t.ID)
-			var blockers []*store.Task
-			for _, d := range deps {
-				if dep, err := s.GetTask(d.DependsOnID); err == nil {
-					if dep.Status != "done" && dep.Status != "cancelled" {
-						blockers = append(blockers, dep)
+			var bLabel string
+			if !IsRemote(cmd) {
+				s := GetStore(cmd)
+				deps, _ := s.DependenciesOf(t.ID)
+				var blockers []*store.Task
+				for _, d := range deps {
+					if dep, err := s.GetTask(d.DependsOnID); err == nil {
+						if dep.Status != "done" && dep.Status != "cancelled" {
+							blockers = append(blockers, dep)
+						}
 					}
 				}
+				bLabel = blockerLabel(projectName, blockers)
 			}
-
-			bLabel := blockerLabel(projectName, blockers)
 
 			subLabel := subtaskLabel(counts, t.ID)
 

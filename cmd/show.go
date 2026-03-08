@@ -6,25 +6,111 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"vine/store"
 	"vine/utils"
 )
+
+// showData holds all the data needed to render a task's show view.
+// This abstracts over local store vs remote client.
+type showData struct {
+	task       *store.Task
+	ancestors  []store.Task
+	children   []store.Task
+	deps       []store.Dependency
+	depTasks   []*store.Task
+	dependents []store.Dependency
+	blockTasks []*store.Task
+	tags       []store.Tag
+	comments   []store.Comment
+	closeReason *store.Comment
+}
+
+func fetchShowDataLocal(s *store.Store, bareID string, detailed bool) *showData {
+	d := &showData{}
+	d.task, _ = s.GetTask(bareID)
+	if d.task == nil {
+		return nil
+	}
+	if d.task.ParentID != nil {
+		d.ancestors, _ = s.AncestorChain(bareID)
+	}
+	d.children, _ = s.ChildTasks(bareID)
+	d.deps, _ = s.DependenciesOf(bareID)
+	for _, dep := range d.deps {
+		if t, err := s.GetTask(dep.DependsOnID); err == nil {
+			d.depTasks = append(d.depTasks, t)
+		}
+	}
+	d.dependents, _ = s.DependentsOf(bareID)
+	for _, dep := range d.dependents {
+		if t, err := s.GetTask(dep.TaskID); err == nil {
+			d.blockTasks = append(d.blockTasks, t)
+		}
+	}
+	d.tags, _ = s.TagsForTask(bareID)
+	if d.task.Status == "done" || d.task.Status == "cancelled" {
+		d.closeReason, _ = s.LatestCloseReason(bareID)
+	}
+	if detailed {
+		d.comments, _ = s.CommentsForTask(bareID)
+	}
+	return d
+}
+
+func fetchShowDataRemote(cmd *cobra.Command, bareID string, detailed bool) *showData {
+	c, project := GetRemoteClient(cmd)
+	d := &showData{}
+	var err error
+	d.task, err = c.GetTask(project, bareID)
+	if err != nil {
+		return nil
+	}
+	if d.task.ParentID != nil {
+		d.ancestors, _ = c.AncestorChain(project, bareID)
+	}
+	d.children, _ = c.ChildTasks(project, bareID)
+	d.deps, _ = c.DependenciesOf(project, bareID)
+	for _, dep := range d.deps {
+		if t, err := c.GetTask(project, dep.DependsOnID); err == nil {
+			d.depTasks = append(d.depTasks, t)
+		}
+	}
+	d.dependents, _ = c.DependentsOf(project, bareID)
+	for _, dep := range d.dependents {
+		if t, err := c.GetTask(project, dep.TaskID); err == nil {
+			d.blockTasks = append(d.blockTasks, t)
+		}
+	}
+	d.tags, _ = c.TagsForTask(project, bareID)
+	if detailed {
+		d.comments, _ = c.CommentsForTask(project, bareID)
+	}
+	return d
+}
 
 var showCmd = &cobra.Command{
 	Use:   "show <task-id>",
 	Short: "Show detailed information about a task",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := GetStore(cmd)
 		projectName := getProjectName(cmd)
 		detailed, _ := cmd.Flags().GetBool("detailed")
 		short, _ := cmd.Flags().GetBool("short")
 
 		_, bareID := utils.ParseTaskID(args[0])
 
-		task, err := s.GetTask(bareID)
-		if err != nil {
+		var d *showData
+		if IsRemote(cmd) {
+			d = fetchShowDataRemote(cmd, bareID, detailed)
+		} else {
+			s := GetStore(cmd)
+			d = fetchShowDataLocal(s, bareID, detailed)
+		}
+		if d == nil {
 			return fmt.Errorf("task %q not found", args[0])
 		}
+
+		task := d.task
 
 		// JSON: --short returns just the task row, default adds relations.
 		if IsJSON(cmd) {
@@ -33,56 +119,25 @@ var showCmd = &cobra.Command{
 				return nil
 			}
 
-			data := map[string]any{
-				"task": task,
+			data := map[string]any{"task": task}
+			if len(d.ancestors) > 0 {
+				data["ancestors"] = d.ancestors
 			}
-
-			if task.ParentID != nil {
-				ancestors, _ := s.AncestorChain(bareID)
-				if len(ancestors) > 0 {
-					data["ancestors"] = ancestors
-				}
+			if len(d.children) > 0 {
+				data["subtasks"] = d.children
 			}
-
-			children, _ := s.ChildTasks(bareID)
-			if len(children) > 0 {
-				data["subtasks"] = children
+			if len(d.depTasks) > 0 {
+				data["depends_on"] = d.depTasks
 			}
-
-			deps, _ := s.DependenciesOf(bareID)
-			if len(deps) > 0 {
-				var depTasks []any
-				for _, d := range deps {
-					if t, err := s.GetTask(d.DependsOnID); err == nil {
-						depTasks = append(depTasks, t)
-					}
-				}
-				data["depends_on"] = depTasks
+			if len(d.blockTasks) > 0 {
+				data["blocks"] = d.blockTasks
 			}
-
-			dependents, _ := s.DependentsOf(bareID)
-			if len(dependents) > 0 {
-				var depTasks []any
-				for _, d := range dependents {
-					if t, err := s.GetTask(d.TaskID); err == nil {
-						depTasks = append(depTasks, t)
-					}
-				}
-				data["blocks"] = depTasks
+			if len(d.tags) > 0 {
+				data["tags"] = d.tags
 			}
-
-			tags, _ := s.TagsForTask(bareID)
-			if len(tags) > 0 {
-				data["tags"] = tags
+			if len(d.comments) > 0 {
+				data["comments"] = d.comments
 			}
-
-			if detailed {
-				comments, _ := s.CommentsForTask(bareID)
-				if len(comments) > 0 {
-					data["comments"] = comments
-				}
-			}
-
 			PrintOutput(cmd, "", data)
 			return nil
 		}
@@ -123,43 +178,36 @@ var showCmd = &cobra.Command{
 		}
 
 		// Close reason (for done/cancelled tasks).
-		if task.Status == "done" || task.Status == "cancelled" {
-			if reason, err := s.LatestCloseReason(bareID); err == nil {
-				fmt.Printf("\n  %s %s\n", utils.Dim("reason:"), reason.Content)
-			}
+		if d.closeReason != nil {
+			fmt.Printf("\n  %s %s\n", utils.Dim("reason:"), d.closeReason.Content)
 		}
 
 		// Tags.
-		tags, _ := s.TagsForTask(bareID)
-		if len(tags) > 0 {
-			names := make([]string, len(tags))
-			for i, t := range tags {
+		if len(d.tags) > 0 {
+			names := make([]string, len(d.tags))
+			for i, t := range d.tags {
 				names[i] = t.Name
 			}
 			fmt.Printf("\n  %s  %s\n", utils.Dim("tags:"), strings.Join(names, ", "))
 		}
 
 		// Ancestor chain (immediate parent → root).
-		if task.ParentID != nil {
-			ancestors, _ := s.AncestorChain(bareID)
-			if len(ancestors) > 0 {
-				fmt.Printf("\n  %s  ", utils.Dim("parent:"))
-				for i, a := range ancestors {
-					aDisplay := utils.FormatTaskID(projectName, a.ID)
-					if i > 0 {
-						fmt.Printf(" > ")
-					}
-					fmt.Printf("%s %s", utils.Dim(aDisplay), a.Name)
+		if len(d.ancestors) > 0 {
+			fmt.Printf("\n  %s  ", utils.Dim("parent:"))
+			for i, a := range d.ancestors {
+				aDisplay := utils.FormatTaskID(projectName, a.ID)
+				if i > 0 {
+					fmt.Printf(" > ")
 				}
-				fmt.Println()
+				fmt.Printf("%s %s", utils.Dim(aDisplay), a.Name)
 			}
+			fmt.Println()
 		}
 
 		// Subtasks.
-		children, _ := s.ChildTasks(bareID)
-		if len(children) > 0 {
+		if len(d.children) > 0 {
 			fmt.Printf("\n  %s\n", utils.Dim("subtasks:"))
-			for _, c := range children {
+			for _, c := range d.children {
 				childDisplay := utils.FormatTaskID(projectName, c.ID)
 				status := utils.StatusColor(c.Status).Sprint(c.Status)
 				fmt.Printf("    %s  %s  %s\n", utils.Dim(childDisplay), status, c.Name)
@@ -167,28 +215,22 @@ var showCmd = &cobra.Command{
 		}
 
 		// Dependencies (what this task depends on).
-		deps, _ := s.DependenciesOf(bareID)
-		if len(deps) > 0 {
+		if len(d.depTasks) > 0 {
 			fmt.Printf("\n  %s\n", utils.Dim("depends on:"))
-			for _, d := range deps {
-				if t, err := s.GetTask(d.DependsOnID); err == nil {
-					depDisplay := utils.FormatTaskID(projectName, t.ID)
-					status := utils.StatusColor(t.Status).Sprint(t.Status)
-					fmt.Printf("    %s  %s  %s\n", utils.Dim(depDisplay), status, t.Name)
-				}
+			for _, t := range d.depTasks {
+				depDisplay := utils.FormatTaskID(projectName, t.ID)
+				status := utils.StatusColor(t.Status).Sprint(t.Status)
+				fmt.Printf("    %s  %s  %s\n", utils.Dim(depDisplay), status, t.Name)
 			}
 		}
 
 		// Dependents (what tasks this one blocks).
-		dependents, _ := s.DependentsOf(bareID)
-		if len(dependents) > 0 {
+		if len(d.blockTasks) > 0 {
 			fmt.Printf("\n  %s\n", utils.Dim("blocks:"))
-			for _, d := range dependents {
-				if t, err := s.GetTask(d.TaskID); err == nil {
-					depDisplay := utils.FormatTaskID(projectName, t.ID)
-					status := utils.StatusColor(t.Status).Sprint(t.Status)
-					fmt.Printf("    %s  %s  %s\n", utils.Dim(depDisplay), status, t.Name)
-				}
+			for _, t := range d.blockTasks {
+				depDisplay := utils.FormatTaskID(projectName, t.ID)
+				status := utils.StatusColor(t.Status).Sprint(t.Status)
+				fmt.Printf("    %s  %s  %s\n", utils.Dim(depDisplay), status, t.Name)
 			}
 		}
 
@@ -221,10 +263,9 @@ var showCmd = &cobra.Command{
 				}
 			}
 
-			comments, _ := s.CommentsForTask(bareID)
-			if len(comments) > 0 {
+			if len(d.comments) > 0 {
 				fmt.Printf("\n  %s\n", utils.Dim("comments:"))
-				for _, c := range comments {
+				for _, c := range d.comments {
 					typeLabel := ""
 					if c.Type != "comment" {
 						typeLabel = utils.Dim(fmt.Sprintf(" [%s]", c.Type))

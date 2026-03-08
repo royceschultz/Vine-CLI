@@ -14,21 +14,30 @@ var listCmd = &cobra.Command{
 	Short: "Show all tasks",
 	Long:  "Show all tasks. Done and cancelled tasks are hidden by default.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := GetStore(cmd)
-
 		status, _ := cmd.Flags().GetString("status")
 		taskType, _ := cmd.Flags().GetString("type")
 		tag, _ := cmd.Flags().GetString("tag")
 		showAll, _ := cmd.Flags().GetBool("all")
 		n, _ := cmd.Flags().GetInt("number")
 
-		tasks, err := s.ListTasksFiltered(store.TaskFilter{
+		filter := store.TaskFilter{
 			Status:   status,
 			Type:     taskType,
 			Tag:      tag,
 			All:      showAll,
 			RootOnly: IsRoot(cmd),
-		})
+		}
+
+		var tasks []store.Task
+		var err error
+
+		if IsRemote(cmd) {
+			c, project := GetRemoteClient(cmd)
+			tasks, err = c.ListTasks(project, filter)
+		} else {
+			s := GetStore(cmd)
+			tasks, err = s.ListTasksFiltered(filter)
+		}
 		if err != nil {
 			return err
 		}
@@ -44,8 +53,14 @@ var listCmd = &cobra.Command{
 		}
 
 		projectName := getProjectName(cmd)
-		counts := collectChildCounts(s, tasks)
-		parents := collectParents(s, tasks)
+
+		var counts map[string]int
+		var parents map[string]*store.Task
+		if !IsRemote(cmd) {
+			s := GetStore(cmd)
+			counts = collectChildCounts(s, tasks)
+			parents = collectParents(s, tasks)
+		}
 
 		limit := len(tasks)
 		if n > 0 && n < limit {

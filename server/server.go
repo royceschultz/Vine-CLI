@@ -51,6 +51,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/projects/{project}/tasks/{id}/dependencies", s.handleDependencies)
 	s.mux.HandleFunc("GET /api/projects/{project}/tasks/{id}/dependents", s.handleDependents)
 	s.mux.HandleFunc("GET /api/projects/{project}/tasks/{id}/tags", s.handleTaskTags)
+	s.mux.HandleFunc("GET /api/projects/{project}/tasks/{id}/ancestors", s.handleAncestors)
 	s.mux.HandleFunc("GET /api/projects/{project}/ready", s.handleReadyTasks)
 	s.mux.HandleFunc("GET /api/projects/{project}/blocked", s.handleBlockedTasks)
 	s.mux.HandleFunc("GET /api/projects/{project}/status", s.handleStatus)
@@ -272,5 +273,11 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 	withStore(w, r, func(st *store.Store) (any, error) {
 		return st.ListTags()
+	})
+}
+
+func (s *Server) handleAncestors(w http.ResponseWriter, r *http.Request) {
+	withStore(w, r, func(st *store.Store) (any, error) {
+		return st.AncestorChain(r.PathValue("id"))
 	})
 }

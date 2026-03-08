@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"vine/store"
 	"vine/utils"
 )
 
@@ -15,11 +16,18 @@ var searchCmd = &cobra.Command{
 	Long:  "Searches task names, descriptions, and details for the given keyword.",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := GetStore(cmd)
-
 		query := strings.Join(args, " ")
 
-		tasks, err := s.SearchTasks(query)
+		var tasks []store.Task
+		var err error
+
+		if IsRemote(cmd) {
+			c, project := GetRemoteClient(cmd)
+			tasks, err = c.SearchTasks(project, query)
+		} else {
+			s := GetStore(cmd)
+			tasks, err = s.SearchTasks(query)
+		}
 		if err != nil {
 			return err
 		}
@@ -39,7 +47,12 @@ var searchCmd = &cobra.Command{
 		}
 
 		projectName := getProjectName(cmd)
-		counts := collectChildCounts(s, tasks)
+
+		var counts map[string]int
+		if !IsRemote(cmd) {
+			s := GetStore(cmd)
+			counts = collectChildCounts(s, tasks)
+		}
 
 		fmt.Printf("%d result(s) for %q:\n\n", len(tasks), query)
 		for _, t := range tasks {

@@ -13,9 +13,16 @@ var readyCmd = &cobra.Command{
 	Use:   "ready",
 	Short: "List tasks that are ready to work on",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := GetStore(cmd)
+		var tasks []store.Task
+		var err error
 
-		tasks, err := s.ReadyTasks()
+		if IsRemote(cmd) {
+			c, project := GetRemoteClient(cmd)
+			tasks, err = c.ReadyTasks(project)
+		} else {
+			s := GetStore(cmd)
+			tasks, err = s.ReadyTasks()
+		}
 		if err != nil {
 			return err
 		}
@@ -39,8 +46,14 @@ var readyCmd = &cobra.Command{
 		}
 
 		projectName := getProjectName(cmd)
-		counts := collectChildCounts(s, tasks)
-		parents := collectParents(s, tasks)
+
+		var counts map[string]int
+		var parents map[string]*store.Task
+		if !IsRemote(cmd) {
+			s := GetStore(cmd)
+			counts = collectChildCounts(s, tasks)
+			parents = collectParents(s, tasks)
+		}
 
 		limit := len(tasks)
 		if !showAll && n > 0 && n < limit {

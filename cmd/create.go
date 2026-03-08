@@ -85,6 +85,14 @@ func detectMetadata() *store.TaskMetadata {
 
 // getProjectName resolves the project name from config.
 func getProjectName(cmd *cobra.Command) string {
+	// If --project was specified, use that directly.
+	if p, _ := cmd.Root().PersistentFlags().GetString("project"); p != "" {
+		return p
+	}
+	// If in remote mode, use the remote project name.
+	if _, p := GetRemoteClient(cmd); p != "" {
+		return p
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "vine"
