@@ -162,7 +162,7 @@ func commandNeedsDB(cmd *cobra.Command) bool {
 	// Walk up the command tree to check names.
 	for c := cmd; c != nil; c = c.Parent() {
 		switch c.Name() {
-		case "init", "hello", "help", "completion", "db", "migrate", "onboard", "doctor", "remote", "prune":
+		case "init", "hello", "help", "completion", "db", "migrate", "onboard", "doctor", "remote", "prune", "config":
 			return false
 		}
 	}

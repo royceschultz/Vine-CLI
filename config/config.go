@@ -16,9 +16,10 @@ const (
 )
 
 type Config struct {
-	Name     string      `json:"name"`
-	Storage  StorageMode `json:"storage"`
-	Database string      `json:"database,omitempty"`
+	Name       string      `json:"name"`
+	Storage    StorageMode `json:"storage"`
+	Database   string      `json:"database,omitempty"`
+	GitTracked bool        `json:"git_tracked,omitempty"`
 }
 
 // ProjectName returns the project name from config.
@@ -100,6 +101,12 @@ func DatabasePath(projectRoot string, cfg *Config) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown storage mode: %q", cfg.Storage)
 	}
+}
+
+// WriteGitIgnore creates a .vine/.gitignore that ignores all files.
+func WriteGitIgnore(projectRoot string) error {
+	path := filepath.Join(projectRoot, DotVineDir, ".gitignore")
+	return os.WriteFile(path, []byte("*\n"), 0o644)
 }
 
 // GlobalDatabasesDir returns ~/.vine/databases/.

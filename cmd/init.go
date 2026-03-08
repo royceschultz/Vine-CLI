@@ -33,6 +33,8 @@ var initCmd = &cobra.Command{
 
 		var cfg config.Config
 
+		gitTrackedFlag, _ := cmd.Flags().GetString("git-tracked")
+
 		if storageFlag != "" {
 			cfg.Storage = config.StorageMode(storageFlag)
 			if cfg.Storage == config.StorageGlobal {
@@ -44,6 +46,7 @@ var initCmd = &cobra.Command{
 			} else {
 				cfg.Name = filepath.Base(cwd)
 			}
+			cfg.GitTracked = gitTrackedFlag == "true" || gitTrackedFlag == "yes"
 		} else {
 			reader := bufio.NewReader(os.Stdin)
 
@@ -72,10 +75,26 @@ var initCmd = &cobra.Command{
 				cfg.Storage = config.StorageLocal
 				cfg.Name = filepath.Base(cwd)
 			}
+
+			fmt.Println()
+			fmt.Println("Should vine tasks be committed to git?")
+			fmt.Println("  [y] Yes - track .vine/ in version control")
+			fmt.Println("  [n] No  - add .vine/.gitignore to exclude from git")
+			fmt.Print("Choice (y/n) [n]: ")
+
+			gitChoice, _ := reader.ReadString('\n')
+			gitChoice = strings.TrimSpace(strings.ToLower(gitChoice))
+			cfg.GitTracked = gitChoice == "y" || gitChoice == "yes"
 		}
 
 		if err := config.Save(cwd, &cfg); err != nil {
 			return err
+		}
+
+		if !cfg.GitTracked {
+			if err := config.WriteGitIgnore(cwd); err != nil {
+				return fmt.Errorf("writing .gitignore: %w", err)
+			}
 		}
 
 		dbPath, err := config.DatabasePath(cwd, &cfg)
@@ -133,6 +152,7 @@ func listGlobalDatabases() []string {
 func init() {
 	initCmd.Flags().String("storage", "", "storage mode: local or global (skips interactive prompt)")
 	initCmd.Flags().String("name", "", "database name (required when --storage=global)")
+	initCmd.Flags().String("git-tracked", "", "track .vine/ in git: true or false (default: false, adds .gitignore)")
 	AddJSONFlag(initCmd)
 	rootCmd.AddCommand(initCmd)
 }
