@@ -37,9 +37,10 @@ func New() *Server {
 	return s
 }
 
-// SetWatcher attaches a file watcher and registers the WebSocket endpoint.
+// SetWatcher attaches a file watcher and registers the WebSocket endpoints.
 func (s *Server) SetWatcher(w *Watcher) {
 	s.Watcher = w
+	s.mux.HandleFunc("GET /api/watch", w.HandleWatchAll)
 	s.mux.HandleFunc("GET /api/projects/{project}/watch", w.HandleWatch)
 }
 

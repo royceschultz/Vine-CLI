@@ -144,6 +144,9 @@ func (w *Watcher) handleFileEvent(path string) {
 	w.mu.Unlock()
 }
 
+// watchAllKey is the key used for clients subscribed to all projects.
+const watchAllKey = "*"
+
 func (w *Watcher) broadcast(project string) {
 	event := WatchEvent{
 		Type:      "changed",
@@ -158,33 +161,42 @@ func (w *Watcher) broadcast(project string) {
 	}
 
 	w.mu.Lock()
-	conns := w.clients[project]
-	if len(conns) == 0 {
+	// Collect project-specific and watch-all subscribers.
+	var snapshot []*websocket.Conn
+	// Track which key each conn belongs to for cleanup.
+	type connKey struct {
+		conn *websocket.Conn
+		key  string
+	}
+	var all []connKey
+	for conn := range w.clients[project] {
+		snapshot = append(snapshot, conn)
+		all = append(all, connKey{conn, project})
+	}
+	for conn := range w.clients[watchAllKey] {
+		snapshot = append(snapshot, conn)
+		all = append(all, connKey{conn, watchAllKey})
+	}
+	if len(snapshot) == 0 {
 		w.mu.Unlock()
 		return
-	}
-
-	// Copy the set so we can release the lock before writing.
-	snapshot := make([]*websocket.Conn, 0, len(conns))
-	for conn := range conns {
-		snapshot = append(snapshot, conn)
 	}
 	w.mu.Unlock()
 
 	w.logger.Printf("watcher: broadcasting change for %q to %d client(s)", project, len(snapshot))
 
-	var dead []*websocket.Conn
-	for _, conn := range snapshot {
+	var dead []connKey
+	for i, conn := range snapshot {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			dead = append(dead, conn)
+			dead = append(dead, all[i])
 		}
 	}
 
 	if len(dead) > 0 {
 		w.mu.Lock()
-		for _, conn := range dead {
-			delete(w.clients[project], conn)
-			conn.Close()
+		for _, ck := range dead {
+			delete(w.clients[ck.key], ck.conn)
+			ck.conn.Close()
 			w.total--
 		}
 		if w.total == 0 {
@@ -236,14 +248,22 @@ func (w *Watcher) unsubscribe(project string, conn *websocket.Conn) {
 	}
 }
 
-// HandleWatch is the HTTP handler for the WebSocket watch endpoint.
+// HandleWatchAll is the HTTP handler for watching all projects.
+func (w *Watcher) HandleWatchAll(wr http.ResponseWriter, r *http.Request) {
+	w.handleWS(wr, r, watchAllKey)
+}
+
+// HandleWatch is the HTTP handler for watching a specific project.
 func (w *Watcher) HandleWatch(wr http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
 	if project == "" {
 		writeError(wr, http.StatusBadRequest, "missing project name")
 		return
 	}
+	w.handleWS(wr, r, project)
+}
 
+func (w *Watcher) handleWS(wr http.ResponseWriter, r *http.Request, key string) {
 	conn, err := upgrader.Upgrade(wr, r, nil)
 	if err != nil {
 		w.logger.Printf("watcher: upgrade error: %v", err)
@@ -251,11 +271,10 @@ func (w *Watcher) HandleWatch(wr http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	w.subscribe(project, conn)
-	defer w.unsubscribe(project, conn)
+	w.subscribe(key, conn)
+	defer w.unsubscribe(key, conn)
 
 	// Keep the connection alive by reading (and discarding) client messages.
-	// The connection closes when the client disconnects or an error occurs.
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {

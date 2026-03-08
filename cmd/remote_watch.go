@@ -19,20 +19,19 @@ import (
 
 var remoteWatchCmd = &cobra.Command{
 	Use:   "watch <name>",
-	Short: "Watch a remote project for changes",
+	Short: "Watch a remote for changes",
 	Long: `Connect to a remote vine server's WebSocket endpoint and print change
-events as they arrive. Automatically reconnects on disconnect.
+events as they arrive. Watches all projects by default, or a specific
+project with --project. Automatically reconnects on disconnect.
 
 Examples:
-  vine remote watch desktop --project myapp
-  vine remote watch desktop --project myapp --json`,
+  vine remote watch desktop                  # watch all projects
+  vine remote watch desktop --project myapp  # watch one project
+  vine remote watch desktop --json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		project, _ := cmd.Flags().GetString("project")
-		if project == "" {
-			return fmt.Errorf("--project is required")
-		}
 
 		cfg, err := config.LoadRemotes()
 		if err != nil {
@@ -54,12 +53,16 @@ Examples:
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-		fmt.Fprintf(os.Stderr, "watching %s/%s for changes (ctrl+c to stop)\n", name, project)
+		label := name
+		if project != "" {
+			label = name + "/" + project
+		}
+		fmt.Fprintf(os.Stderr, "watching %s for changes (ctrl+c to stop)\n", label)
 
 		jsonOutput := IsJSON(cmd)
 
 		for {
-			err := watchLoop(wsURL, project, jsonOutput, sigCh)
+			err := watchLoop(wsURL, jsonOutput, sigCh)
 			if err == errInterrupted {
 				fmt.Fprintln(os.Stderr)
 				return nil
@@ -81,7 +84,7 @@ Examples:
 
 var errInterrupted = fmt.Errorf("interrupted")
 
-func watchLoop(url, project string, jsonOutput bool, sigCh chan os.Signal) error {
+func watchLoop(url string, jsonOutput bool, sigCh chan os.Signal) error {
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		return fmt.Errorf("connecting: %w", err)
@@ -116,7 +119,7 @@ func watchLoop(url, project string, jsonOutput bool, sigCh chan os.Signal) error
 			if jsonOutput {
 				fmt.Println(string(msg))
 			} else {
-				printWatchEvent(msg, project)
+				printWatchEvent(msg)
 			}
 		case err := <-errCh:
 			return err
@@ -124,7 +127,7 @@ func watchLoop(url, project string, jsonOutput bool, sigCh chan os.Signal) error
 	}
 }
 
-func printWatchEvent(data []byte, project string) {
+func printWatchEvent(data []byte) {
 	var event server.WatchEvent
 	// Best effort parse — print raw if it fails.
 	if err := json.Unmarshal(data, &event); err != nil {
@@ -146,21 +149,24 @@ func printWatchEvent(data []byte, project string) {
 }
 
 func resolveWSURL(remote *config.Remote, project string) (string, error) {
+	path := "/api/watch"
+	if project != "" {
+		path = fmt.Sprintf("/api/projects/%s/watch", project)
+	}
+
 	if remote.IsSSH() {
-		// Ensure tunnel is connected.
 		info, err := client.Connect(remote)
 		if err != nil {
 			return "", fmt.Errorf("connecting to %s: %w", remote.Name, err)
 		}
-		return fmt.Sprintf("ws://127.0.0.1:%d/api/projects/%s/watch", info.LocalPort, project), nil
+		return fmt.Sprintf("ws://127.0.0.1:%d%s", info.LocalPort, path), nil
 	}
 
-	// Direct HTTP/HTTPS.
 	scheme := "ws"
 	if remote.TLS {
 		scheme = "wss"
 	}
-	return fmt.Sprintf("%s://%s:%d/api/projects/%s/watch", scheme, remote.Host, remote.Port, project), nil
+	return fmt.Sprintf("%s://%s:%d%s", scheme, remote.Host, remote.Port, path), nil
 }
 
 func init() {
