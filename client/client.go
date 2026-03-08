@@ -13,15 +13,24 @@ import (
 	"vine/store"
 )
 
-// Client queries a remote vine server over HTTP.
+// Client queries a remote vine server over HTTP, optionally through an SSH tunnel.
 type Client struct {
 	baseURL    string
 	token      string
 	httpClient *http.Client
 }
 
-// New creates a Client from a remote config.
-func New(remote *config.Remote) *Client {
+// New creates a Client from a remote config. For SSH remotes, it connects
+// through a persistent SSH tunnel (auto-connecting if needed).
+func New(remote *config.Remote) (*Client, error) {
+	if remote.IsSSH() {
+		return newSSHClient(remote)
+	}
+	return newHTTPClient(remote), nil
+}
+
+// newHTTPClient creates a direct HTTP client (opt-in via --http).
+func newHTTPClient(remote *config.Remote) *Client {
 	transport := &http.Transport{}
 	if remote.TLS {
 		transport.TLSClientConfig = &tls.Config{}
@@ -36,6 +45,25 @@ func New(remote *config.Remote) *Client {
 		},
 	}
 }
+
+// newSSHClient reuses a persistent SSH tunnel or auto-connects one.
+func newSSHClient(remote *config.Remote) (*Client, error) {
+	info, err := Connect(remote)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{
+		baseURL: fmt.Sprintf("http://127.0.0.1:%d", info.LocalPort),
+		token:   remote.Token,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}, nil
+}
+
+// Close is a no-op for persistent tunnels. Use Disconnect() to tear down tunnels.
+func (c *Client) Close() {}
 
 func (c *Client) get(path string, query url.Values, result any) error {
 	u := c.baseURL + path
@@ -54,7 +82,7 @@ func (c *Client) get(path string, query url.Values, result any) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return fmt.Errorf("remote unreachable (is the tunnel still connected?): %w", err)
 	}
 	defer resp.Body.Close()
 

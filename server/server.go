@@ -24,6 +24,7 @@ type HealthResponse struct {
 type Server struct {
 	mux       *http.ServeMux
 	startedAt time.Time
+	Watcher   *Watcher
 }
 
 // New creates a new Server with all API routes registered.
@@ -34,6 +35,12 @@ func New() *Server {
 	}
 	s.registerRoutes()
 	return s
+}
+
+// SetWatcher attaches a file watcher and registers the WebSocket endpoint.
+func (s *Server) SetWatcher(w *Watcher) {
+	s.Watcher = w
+	s.mux.HandleFunc("GET /api/projects/{project}/watch", w.HandleWatch)
 }
 
 // Handler returns the http.Handler for this server.

@@ -1,142 +1,165 @@
 # Remote Access
 
-Vine supports querying tasks on remote machines over HTTP. This is useful when you run vine on a development server and want to view tasks from your local machine (e.g., in the vine manager Electron app).
+Vine supports querying tasks on remote machines. By default, connections are secured through SSH tunneling — the vine server binds to localhost on the remote machine and the client automatically creates an SSH tunnel to reach it.
 
 ## Architecture
 
 ```
-┌─────────────────┐        HTTP/HTTPS        ┌─────────────────┐
+┌─────────────────┐     SSH tunnel + HTTP     ┌─────────────────┐
 │  Local Machine   │  ◄──────────────────►   │  Remote Server   │
 │                  │                          │                  │
-│  vine CLI        │   GET /api/projects/...  │  vine remote     │
-│  vine manager    │                          │  serve           │
-│  (Electron app)  │                          │  ~/.vine/        │
+│  vine CLI        │  ssh -L port:lo:port     │  vine remote     │
+│  vine manager    │  ──────────────────►     │  serve           │
+│  (Electron app)  │  HTTP over tunnel        │  127.0.0.1:7633  │
+│                  │                          │  ~/.vine/        │
 │                  │                          │  databases/*.db  │
 └─────────────────┘                          └─────────────────┘
 ```
-
-The remote server (`vine remote serve`) exposes a read-only HTTP API over vine's global databases. The client side uses `--remote` and `--project` flags to query it.
 
 ## Quick Start
 
 ### On the remote machine (server)
 
 ```bash
-# Start the server (daemonizes by default)
+# Start the server (binds to localhost by default, daemonizes)
 vine remote serve
-
-# Or with explicit options
-vine remote serve --port 8080 --bind 0.0.0.0 --token my-secret-token
 ```
+
+That's it. The server listens on `127.0.0.1:7633` — SSH handles the rest.
 
 ### On your local machine (client)
 
 ```bash
-# Add the remote
-vine remote add myserver 192.168.1.100 --port 8080 --token my-secret-token
+# Add the remote (SSH transport is the default)
+vine remote add desktop 192.168.1.100
 
-# Test connectivity
-vine remote ping myserver
+# Test connectivity (establishes SSH tunnel automatically)
+vine remote ping desktop
 
 # List available projects
-vine remote projects myserver
+vine remote projects desktop
 
 # Query tasks
-vine list --remote myserver --project my-project
-vine status --remote myserver --project my-project
-vine show --remote myserver --project my-project abc12
+vine list --remote desktop --project my-project
+vine status --remote desktop --project my-project
 ```
 
-## Server Setup
+## Connection Methods
 
-### Basic (localhost only)
+### SSH tunnel (default)
 
-The simplest setup binds to localhost only. This is the default and is secure — no authentication is needed because the server is only reachable from the machine itself.
+The recommended and default method. The client automatically creates an SSH tunnel using your existing SSH keys/agent, then sends HTTP requests through the tunnel. The vine server never needs to listen on a public interface.
 
 ```bash
-vine remote serve
-# Listening on http://127.0.0.1:7633
+# Basic — uses your default SSH user and key
+vine remote add desktop 192.168.1.100
+
+# With explicit SSH user
+vine remote add desktop 192.168.1.100 --ssh-user royce
+
+# Non-standard SSH or vine port
+vine remote add desktop 192.168.1.100 --ssh-port 2222 --port 8080
 ```
 
-To access this from another machine, use SSH port forwarding (see below).
+**Requirements:**
+- SSH access to the remote host (key-based auth recommended)
+- The vine server running on the remote host (`vine remote serve`)
 
-### With token authentication
+**How it works:**
+1. On first use (or via `vine remote connect`), the client picks a free local port
+2. Runs `ssh -N -L <localport>:127.0.0.1:7633 <host>` as a background process
+3. Saves tunnel state to `~/.vine/tunnels/<name>.json`
+4. Subsequent commands reuse the existing tunnel — no per-command overhead
+5. The tunnel persists until explicitly disconnected or the SSH connection drops
 
-If you need to expose the server on a network interface, use `--bind` with `--token`:
+**Tunnel management:**
 
 ```bash
+vine remote connect desktop       # explicitly open tunnel (optional — auto-connects on first query)
+vine remote disconnect desktop    # close tunnel
+vine remote disconnect-all        # close all tunnels
+vine remote list                  # shows connection status (connected/disconnected)
+```
+
+If you take your laptop on the go, the tunnel will eventually die on its own (SSH keepalives detect the broken connection). The next query will auto-reconnect if the remote becomes reachable again. Stale tunnel state is cleaned up automatically.
+
+### Direct HTTP (opt-in)
+
+For environments where SSH isn't available or you want to expose vine directly (e.g., behind a reverse proxy). Less secure than SSH — use token auth and TLS.
+
+```bash
+# Direct HTTP with token auth
+vine remote add cloud api.example.com --http --token s3cret
+
+# Direct HTTPS
+vine remote add cloud api.example.com --http --token s3cret --tls
+```
+
+When using direct HTTP, the server must bind to a network interface:
+
+```bash
+# On the server — bind to all interfaces with token auth
 vine remote serve --bind 0.0.0.0 --token my-secret-token
-```
 
-All API requests (except `/api/health`) will require a `Authorization: Bearer my-secret-token` header.
-
-### With TLS
-
-For encrypted connections:
-
-```bash
+# With TLS
 vine remote serve --bind 0.0.0.0 --token my-secret-token \
   --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
 ```
 
-### Daemon management
+## Server Setup
 
-The server runs as a background daemon by default. Use `--foreground` to run in the foreground (useful for debugging or systemd/launchd integration).
+### Starting the server
 
 ```bash
-# Start (daemon)
+# Default: localhost only, port 7633, daemonizes
 vine remote serve
 
-# Stop
-vine remote stop        # (coming soon — for now: kill $(cat ~/.vine/server.pid))
+# Foreground mode (useful for debugging or service managers)
+vine remote serve --foreground
 
-# Check status
-vine remote status      # (coming soon — for now: vine remote ping <name>)
+# Custom port
+vine remote serve --port 8080
+```
 
-# View logs
-cat ~/.vine/server.log
-tail -f ~/.vine/server.log
+### Daemon management
+
+```bash
+vine remote serve     # start (daemonizes)
+vine remote status    # check if running
+vine remote stop      # graceful shutdown
+vine remote restart   # stop + start with saved config
+vine remote logs      # view server log (last 50 lines)
+vine remote logs -f   # follow log output
 ```
 
 **PID file:** `~/.vine/server.pid`
 **Log file:** `~/.vine/server.log` (rotates at 10MB, keeps 3 old files)
+**Config file:** `~/.vine/server.json` (saved on start, used by restart)
 
-### Process management
+### Process safeguards
 
-The server writes its PID to `~/.vine/server.pid` and includes safeguards for common issues:
-
-- **Duplicate start:** If a server is already running, `vine remote serve` will refuse to start and tell you the existing PID.
-- **Stale PID file:** If the server crashed and left behind a PID file, the next `serve` will detect that the process is gone and clean up automatically.
-- **PID reuse:** The server exposes a `/api/health` endpoint that returns its PID and start time. When checking if a server is running, vine verifies the PID belongs to an actual vine server, not an unrelated process that reused the PID.
-- **Orphan detection:** If the PID file is deleted while the server is running, `vine remote serve` will detect the orphan by probing the health endpoint on the target port and report the orphan's PID.
-
-## SSH Port Forwarding
-
-The recommended approach for secure remote access: run the server on localhost (default) and use SSH to forward the port.
-
-```bash
-# On your local machine, forward local port 7633 to the remote's localhost:7633
-ssh -L 7633:localhost:7633 user@remote-host
-
-# Then add a remote pointing to your local forwarded port
-vine remote add myserver 127.0.0.1 --port 7633
-```
-
-This way:
-- No token or TLS needed (SSH handles auth and encryption)
-- The vine server never listens on a public interface
-- You get SSH's authentication for free
-
-For a persistent tunnel, use `ssh -fNL 7633:localhost:7633 user@remote-host` or configure it in `~/.ssh/config`:
-
-```
-Host myserver
-    HostName remote-host
-    User myuser
-    LocalForward 7633 localhost:7633
-```
+- **Duplicate start:** Refuses to start if a server is already running, reports existing PID.
+- **Stale PID file:** Detects dead processes and cleans up automatically.
+- **PID reuse:** Verifies via `/api/health` that the PID belongs to an actual vine server.
+- **Orphan detection:** Probes the target port to find servers running without a PID file.
 
 ## Client Configuration
+
+### Managing remotes
+
+```bash
+vine remote add <name> <host>         # SSH tunnel (default)
+vine remote add <name> <host> --http  # Direct HTTP
+vine remote remove <name>
+vine remote list                      # shows transport and connection status
+vine remote ping <name>
+vine remote projects <name>
+vine remote connect <name>            # open persistent SSH tunnel
+vine remote disconnect <name>         # close tunnel
+vine remote disconnect-all            # close all tunnels
+```
+
+### Configuration file
 
 Remote connections are stored in `~/.vine/remotes.json`:
 
@@ -144,9 +167,17 @@ Remote connections are stored in `~/.vine/remotes.json`:
 {
   "remotes": [
     {
-      "name": "myserver",
+      "name": "desktop",
       "host": "192.168.1.100",
       "port": 7633,
+      "transport": "ssh",
+      "ssh_user": "royce"
+    },
+    {
+      "name": "cloud",
+      "host": "api.example.com",
+      "port": 7633,
+      "transport": "http",
       "token": "my-secret-token",
       "tls": true
     }
@@ -154,37 +185,27 @@ Remote connections are stored in `~/.vine/remotes.json`:
 }
 ```
 
-### Managing remotes
-
-```bash
-vine remote add <name> <host> [--port 7633] [--token <token>] [--tls]
-vine remote remove <name>
-vine remote list
-vine remote ping <name>
-vine remote projects <name>
-```
-
 ## Querying Remote Data
 
 Add `--remote <name> --project <project>` to any read command:
 
 ```bash
-vine list --remote myserver --project myapp
-vine list --remote myserver --project myapp --status open --type bug
-vine show --remote myserver --project myapp abc12
-vine show --remote myserver --project myapp abc12 --detailed
-vine children --remote myserver --project myapp abc12
-vine ready --remote myserver --project myapp
-vine blocked --remote myserver --project myapp
-vine status --remote myserver --project myapp --detailed
-vine search --remote myserver --project myapp "login bug"
+vine list --remote desktop --project myapp
+vine list --remote desktop --project myapp --status open --type bug
+vine show --remote desktop --project myapp abc12
+vine show --remote desktop --project myapp abc12 --detailed
+vine children --remote desktop --project myapp abc12
+vine ready --remote desktop --project myapp
+vine blocked --remote desktop --project myapp
+vine status --remote desktop --project myapp --detailed
+vine search --remote desktop --project myapp "login bug"
 ```
 
 JSON output works the same way:
 
 ```bash
-vine list --remote myserver --project myapp --json
-vine status --remote myserver --project myapp --json
+vine list --remote desktop --project myapp --json
+vine status --remote desktop --project myapp --json
 ```
 
 ### Using --project without --remote
@@ -195,8 +216,6 @@ The `--project` flag also works locally to query a global database by name, with
 vine status --project my-project
 vine list --project my-project
 ```
-
-If you're in a directory with a `.vine/config`, a note will be printed to stderr indicating that the local config is being ignored.
 
 ## API Reference
 
@@ -220,30 +239,20 @@ The HTTP API is read-only and returns JSON. All endpoints are under `/api/`.
 | `GET /api/projects/{project}/search` | Search tasks (query param: `q`) |
 | `GET /api/projects/{project}/tags` | All tags with counts |
 
-### Health response
-
-```json
-{
-  "service": "vine",
-  "pid": 12345,
-  "started_at": "2026-03-08T22:00:00Z"
-}
-```
-
 ### Authentication
 
-When a token is configured, include it in the `Authorization` header:
+When using direct HTTP with a token configured, include it in the `Authorization` header:
 
 ```bash
 curl -H "Authorization: Bearer my-token" http://host:7633/api/projects
 ```
 
-The `/api/health` endpoint is always accessible without authentication.
+The `/api/health` endpoint is always accessible without authentication. With SSH transport, no token is needed — SSH handles authentication.
 
 ## Security Considerations
 
-- **Default is secure:** The server binds to `127.0.0.1` by default. It cannot be reached from the network without explicit `--bind 0.0.0.0`.
-- **SSH forwarding preferred:** Use SSH tunnels for remote access when possible. This avoids exposing the server on a network interface entirely.
-- **Token auth is optional:** Only needed when binding to non-localhost interfaces. Tokens are sent in plaintext over HTTP — use TLS if the network is untrusted.
+- **SSH by default:** Remotes use SSH tunneling unless `--http` is explicitly specified. SSH handles authentication and encryption using your existing keys.
+- **Server binds to localhost:** The server binds to `127.0.0.1` by default. It cannot be reached from the network without explicit `--bind 0.0.0.0`.
+- **Token auth for HTTP:** Only needed when using direct HTTP transport. Tokens are sent in plaintext over HTTP — use TLS if the network is untrusted.
 - **Read-only:** The API only exposes read operations. No task creation, modification, or deletion is possible through the remote server.
 - **Project name sanitization:** The server validates project names to prevent path traversal — only alphanumeric characters, dashes, underscores, and dots are allowed.

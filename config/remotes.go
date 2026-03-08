@@ -9,11 +9,27 @@ import (
 
 // Remote represents a configured remote vine server.
 type Remote struct {
-	Name  string `json:"name"`
-	Host  string `json:"host"`
-	Port  int    `json:"port"`
-	Token string `json:"token,omitempty"`
-	TLS   bool   `json:"tls,omitempty"`
+	Name      string `json:"name"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Token     string `json:"token,omitempty"`
+	TLS       bool   `json:"tls,omitempty"`
+	Transport string `json:"transport,omitempty"` // "ssh" (default) or "http"
+	SSHUser   string `json:"ssh_user,omitempty"`
+	SSHPort   int    `json:"ssh_port,omitempty"` // default 22
+}
+
+// IsSSH returns true if this remote uses SSH tunnel transport (the default).
+func (r *Remote) IsSSH() bool {
+	return r.Transport == "" || r.Transport == "ssh"
+}
+
+// SSHPortOrDefault returns the configured SSH port, or 22 if not set.
+func (r *Remote) SSHPortOrDefault() int {
+	if r.SSHPort > 0 {
+		return r.SSHPort
+	}
+	return 22
 }
 
 // Scheme returns "https" if TLS is enabled, otherwise "http".

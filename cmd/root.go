@@ -63,6 +63,10 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+		// Close SSH tunnel if one was established.
+		if c, _ := cmd.Context().Value(remoteClientKey).(*client.Client); c != nil {
+			c.Close()
+		}
 		if s := storeFromContext(cmd.Context()); s != nil {
 			return s.Close()
 		}
@@ -118,7 +122,10 @@ func setupRemoteContext(cmd *cobra.Command, remoteName string) error {
 		return fmt.Errorf("remote %q not found. Use 'vine remote list' to see configured remotes", remoteName)
 	}
 
-	c := client.New(remote)
+	c, err := client.New(remote)
+	if err != nil {
+		return fmt.Errorf("connecting to remote %q: %w", remoteName, err)
+	}
 
 	ctx := cmd.Context()
 	ctx = context.WithValue(ctx, remoteClientKey, c)

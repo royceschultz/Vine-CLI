@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"vine/client"
 	"vine/config"
 	"vine/utils"
 )
@@ -30,21 +31,44 @@ var remoteListCmd = &cobra.Command{
 		}
 
 		for _, r := range cfg.Remotes {
-			tokenStatus := utils.Dim("no auth")
-			if r.Token != "" {
-				tokenStatus = utils.Dim("token")
-			}
+			if r.IsSSH() {
+				target := r.Host
+				if r.SSHUser != "" {
+					target = r.SSHUser + "@" + r.Host
+				}
+				authInfo := "ssh"
+				if r.Token != "" {
+					authInfo = "ssh+token"
+				}
 
-			scheme := "http"
-			if r.TLS {
-				scheme = "https"
-			}
+				// Check tunnel status.
+				status := utils.StatusColor("cancelled").Sprint("disconnected")
+				tunnel, _ := client.LoadTunnel(r.Name)
+				if client.IsTunnelAlive(tunnel) {
+					status = utils.StatusColor("done").Sprint("connected")
+				}
 
-			fmt.Printf("  %s  %s://%s:%d  %s\n",
-				utils.Bold(r.Name),
-				scheme, r.Host, r.Port,
-				tokenStatus,
-			)
+				fmt.Printf("  %s  %s:%d  %s  %s\n",
+					utils.Bold(r.Name),
+					target, r.Port,
+					utils.Dim(authInfo),
+					status,
+				)
+			} else {
+				authInfo := utils.Dim("no auth")
+				if r.Token != "" {
+					authInfo = utils.Dim("token")
+				}
+				scheme := "http"
+				if r.TLS {
+					scheme = "https"
+				}
+				fmt.Printf("  %s  %s://%s:%d  %s\n",
+					utils.Bold(r.Name),
+					scheme, r.Host, r.Port,
+					authInfo,
+				)
+			}
 		}
 
 		return nil

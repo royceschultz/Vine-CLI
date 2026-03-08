@@ -150,6 +150,12 @@ func serveForeground(dir, pidPath, bind string, port int, token, tlsCert, tlsKey
 
 	// Build handler chain.
 	srv := server.New()
+
+	// Attach file watcher for WebSocket notifications.
+	// The watcher only starts monitoring when clients connect.
+	watcher := server.NewWatcher(logger)
+	srv.SetWatcher(watcher)
+
 	var handler http.Handler = srv.Handler()
 	handler = server.RequestLogger(logger)(handler)
 	handler = server.TokenAuth(token)(handler)
@@ -207,6 +213,7 @@ func serveForeground(dir, pidPath, bind string, port int, token, tlsCert, tlsKey
 	select {
 	case <-ctx.Done():
 		logger.Printf("shutting down...")
+		watcher.Stop()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return httpServer.Shutdown(shutdownCtx)

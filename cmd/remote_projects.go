@@ -26,7 +26,11 @@ var remoteProjectsCmd = &cobra.Command{
 			return fmt.Errorf("remote %q not found", name)
 		}
 
-		c := client.New(remote)
+		c, err := client.New(remote)
+		if err != nil {
+			return fmt.Errorf("connecting to %s: %w", name, err)
+		}
+		defer c.Close()
 		projects, err := c.ListProjects()
 		if err != nil {
 			return fmt.Errorf("querying %s: %w", name, err)
