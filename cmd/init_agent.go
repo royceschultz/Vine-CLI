@@ -20,7 +20,7 @@ var initClaudeCmd = &cobra.Command{
 	Use:   "claude",
 	Short: "Set up vine integration for Claude Code",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		installHooks, _ := cmd.Flags().GetBool("hooks")
+		noHooks, _ := cmd.Flags().GetBool("no-hooks")
 
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -44,8 +44,8 @@ var initClaudeCmd = &cobra.Command{
 			fmt.Println("Added system prompt.")
 		}
 
-		// Optionally add hooks.
-		if installHooks {
+		// Install hooks unless explicitly opted out.
+		if !noHooks {
 			if addClaudeHooks(settings) {
 				changed = true
 				fmt.Println("Added PreCompact and SessionStart hooks.")
@@ -174,7 +174,7 @@ var initCopilotCmd = &cobra.Command{
 }
 
 func init() {
-	initClaudeCmd.Flags().Bool("hooks", false, "install PreCompact and SessionStart hooks in .claude/settings.local.json")
+	initClaudeCmd.Flags().Bool("no-hooks", false, "skip installing PreCompact and SessionStart hooks")
 	initCmd.AddCommand(initClaudeCmd)
 	initCmd.AddCommand(initCursorCmd)
 	initCmd.AddCommand(initCopilotCmd)

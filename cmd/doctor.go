@@ -262,7 +262,7 @@ func checkClaudeHooks(cwd string) checkResult {
 		Name:   "claude: session hooks",
 		Status: "warn",
 		Detail: fmt.Sprintf("Missing hooks: %v. Vine prime won't run automatically.", missing),
-		Fix:    "Run 'vine init claude --hooks' to add hooks to .claude/settings.local.json.",
+		Fix:    "Run 'vine init claude' to add hooks to .claude/settings.local.json.",
 	}
 }
 
