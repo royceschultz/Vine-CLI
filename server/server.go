@@ -188,6 +188,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
+		st.EnrichEffectiveStatus(tasks)
 
 		ids := make([]string, len(tasks))
 		for i, t := range tasks {
@@ -217,13 +218,25 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	withStore(w, r, func(st *store.Store) (any, error) {
-		return st.GetTask(r.PathValue("id"))
+		t, err := st.GetTask(r.PathValue("id"))
+		if err != nil {
+			return nil, err
+		}
+		tasks := []store.Task{*t}
+		st.EnrichEffectiveStatus(tasks)
+		t.Status = tasks[0].Status
+		return t, nil
 	})
 }
 
 func (s *Server) handleChildTasks(w http.ResponseWriter, r *http.Request) {
 	withStore(w, r, func(st *store.Store) (any, error) {
-		return st.ChildTasks(r.PathValue("id"))
+		tasks, err := st.ChildTasks(r.PathValue("id"))
+		if err != nil {
+			return nil, err
+		}
+		st.EnrichEffectiveStatus(tasks)
+		return tasks, nil
 	})
 }
 
@@ -267,13 +280,27 @@ func (s *Server) handleTaskTags(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleReadyTasks(w http.ResponseWriter, r *http.Request) {
 	withStore(w, r, func(st *store.Store) (any, error) {
-		return st.ReadyTasks()
+		tasks, err := st.ReadyTasks()
+		if err != nil {
+			return nil, err
+		}
+		for i := range tasks {
+			tasks[i].Status = "ready"
+		}
+		return tasks, nil
 	})
 }
 
 func (s *Server) handleBlockedTasks(w http.ResponseWriter, r *http.Request) {
 	withStore(w, r, func(st *store.Store) (any, error) {
-		return st.BlockedTasks()
+		tasks, err := st.BlockedTasks()
+		if err != nil {
+			return nil, err
+		}
+		for i := range tasks {
+			tasks[i].Status = "blocked"
+		}
+		return tasks, nil
 	})
 }
 
@@ -315,7 +342,12 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		if q == "" {
 			return []store.Task{}, nil
 		}
-		return st.SearchTasks(q)
+		tasks, err := st.SearchTasks(q)
+		if err != nil {
+			return nil, err
+		}
+		st.EnrichEffectiveStatus(tasks)
+		return tasks, nil
 	})
 }
 
@@ -327,6 +359,11 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAncestors(w http.ResponseWriter, r *http.Request) {
 	withStore(w, r, func(st *store.Store) (any, error) {
-		return st.AncestorChain(r.PathValue("id"))
+		tasks, err := st.AncestorChain(r.PathValue("id"))
+		if err != nil {
+			return nil, err
+		}
+		st.EnrichEffectiveStatus(tasks)
+		return tasks, nil
 	})
 }

@@ -294,6 +294,74 @@ func (s *Store) BlockedTasks() ([]Task, error) {
 	return tasks, nil
 }
 
+// EnrichEffectiveStatus replaces the Status field for "open" tasks with
+// "blocked" (has unfulfilled dependencies) or "ready" (no unfulfilled deps).
+// Tasks with other statuses are left unchanged. Modifies tasks in-place.
+func (s *Store) EnrichEffectiveStatus(tasks []Task) error {
+	var openIDs []string
+	openIdx := map[string][]int{}
+	for i, t := range tasks {
+		if t.Status == "open" {
+			openIDs = append(openIDs, t.ID)
+			openIdx[t.ID] = append(openIdx[t.ID], i)
+		}
+	}
+	if len(openIDs) == 0 {
+		return nil
+	}
+
+	// Find which open tasks have unfulfilled dependencies.
+	query, args, err := sqlx.In(`
+		SELECT DISTINCT d.task_id FROM dependencies d
+		JOIN tasks dep ON dep.id = d.depends_on_id
+		WHERE d.task_id IN (?)
+		  AND dep.status NOT IN ('done', 'cancelled')
+	`, openIDs)
+	if err != nil {
+		return fmt.Errorf("building blocked-check query: %w", err)
+	}
+	query = s.db.Rebind(query)
+
+	var blockedIDs []string
+	if err := s.db.Select(&blockedIDs, query, args...); err != nil {
+		return fmt.Errorf("querying blocked task IDs: %w", err)
+	}
+
+	blockedSet := make(map[string]bool, len(blockedIDs))
+	for _, id := range blockedIDs {
+		blockedSet[id] = true
+	}
+
+	for id, indices := range openIdx {
+		status := "ready"
+		if blockedSet[id] {
+			status = "blocked"
+		}
+		for _, i := range indices {
+			tasks[i].Status = status
+		}
+	}
+	return nil
+}
+
+// EnrichEffectiveStatusPtr applies EnrichEffectiveStatus to pointer slices.
+func (s *Store) EnrichEffectiveStatusPtr(tasks []*Task) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+	plain := make([]Task, len(tasks))
+	for i, t := range tasks {
+		plain[i] = *t
+	}
+	if err := s.EnrichEffectiveStatus(plain); err != nil {
+		return err
+	}
+	for i, t := range plain {
+		tasks[i].Status = t.Status
+	}
+	return nil
+}
+
 func (s *Store) SearchTasks(query string) ([]Task, error) {
 	var tasks []Task
 	pattern := "%" + query + "%"

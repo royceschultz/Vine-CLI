@@ -43,9 +43,10 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		// For local mode, enrich tasks with dependency IDs.
+		// For local mode, enrich tasks with dependency IDs and effective status.
 		if !IsRemote(cmd) {
 			s := GetStore(cmd)
+			s.EnrichEffectiveStatus(plainTasks)
 			ids := make([]string, len(plainTasks))
 			for i, t := range plainTasks {
 				ids[i] = t.ID
@@ -117,7 +118,7 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	listCmd.Flags().StringP("status", "s", "", "filter by status (open, in_progress, done, cancelled)")
+	listCmd.Flags().StringP("status", "s", "", "filter by status (open, in_progress, done, cancelled); open tasks display as ready/blocked")
 	listCmd.Flags().StringP("type", "t", "", "filter by type (feature, bug, task, epic)")
 	listCmd.Flags().String("tag", "", "filter by tag")
 	listCmd.Flags().Bool("all", false, "include done and cancelled tasks")

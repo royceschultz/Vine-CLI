@@ -48,6 +48,16 @@ func fetchShowDataLocal(s *store.Store, bareID string, detailed bool) *showData 
 		}
 	}
 	d.tags, _ = s.TagsForTask(bareID)
+
+	// Enrich with effective status (open → blocked/ready).
+	mainTask := []store.Task{*d.task}
+	s.EnrichEffectiveStatus(mainTask)
+	d.task.Status = mainTask[0].Status
+
+	s.EnrichEffectiveStatus(d.children)
+	s.EnrichEffectiveStatusPtr(d.depTasks)
+	s.EnrichEffectiveStatusPtr(d.blockTasks)
+
 	if d.task.Status == "done" || d.task.Status == "cancelled" {
 		d.closeReason, _ = s.LatestCloseReason(bareID)
 	}

@@ -32,6 +32,11 @@ var readyCmd = &cobra.Command{
 			tasks = filterRoot(tasks)
 		}
 
+		// All tasks from ReadyTasks() are ready by definition.
+		for i := range tasks {
+			tasks[i].Status = "ready"
+		}
+
 		n, _ := cmd.Flags().GetInt("number")
 		showAll, _ := cmd.Flags().GetBool("all")
 

@@ -31,6 +31,11 @@ var blockedCmd = &cobra.Command{
 			tasks = filterRoot(tasks)
 		}
 
+		// All tasks from BlockedTasks() are blocked by definition.
+		for i := range tasks {
+			tasks[i].Status = "blocked"
+		}
+
 		if IsJSON(cmd) {
 			PrintOutput(cmd, "", tasks)
 			return nil
