@@ -70,17 +70,13 @@ var childrenCmd = &cobra.Command{
 		for _, c := range children {
 			childDisplay := utils.FormatTaskID(projectName, c.ID)
 			statusLabel := utils.StatusColor(c.Status).Sprint(c.Status)
-			typeLabel := ""
-			if c.Type != "task" {
-				typeLabel = " " + utils.Dim("["+c.Type+"]")
-			}
 			subLabel := ""
 			if counts != nil {
 				if n, ok := counts[c.ID]; ok && n > 0 {
 					subLabel = " " + utils.Dim(fmt.Sprintf("(%d subtasks)", n))
 				}
 			}
-			fmt.Printf("  %s  %s  %s%s%s\n", utils.Dim(childDisplay), statusLabel, c.Name, typeLabel, subLabel)
+			fmt.Printf("  %s  %s  %s%s%s\n", utils.Dim(childDisplay), statusLabel, c.Name, utils.TypeLabel(c.Type), subLabel)
 		}
 
 		return nil

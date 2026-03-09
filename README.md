@@ -34,7 +34,7 @@ vine status                            # project summary
 
 ## Concepts
 
-**Tasks** have a name, optional description and details, a type (`task`, `bug`, `feature`, `epic`), and a status (`open`, `in_progress`, `done`, `cancelled`). Each task gets a short random ID (e.g. `k7x2a`) displayed with a project prefix like `myproject-k7x2a`.
+**Tasks** have a name, optional description and details, a type (`task`, `bug`, `feature`, `epic`), and a status (`open`, `in_progress`, `done`, `cancelled`). Each task gets a short random ID (e.g. `k7x2a`) displayed with a project prefix like `myproject-k7x2a`. In output, `open` tasks are displayed as either `ready` or `blocked` depending on whether their dependencies are satisfied.
 
 **Subtasks** form a parent-child hierarchy. Any task can be a parent. Use this to break epics into features, features into tasks.
 
@@ -65,7 +65,7 @@ vine status                            # project summary
 | `vine show <id> --short` | Minimal one-liner |
 | `vine show <id> --detailed` | Includes metadata and comments |
 | `vine list` | All active tasks (hides done/cancelled by default) |
-| `vine list -s <status>` | Filter by status |
+| `vine list -s <status>` | Filter by status (`open`, `in_progress`, `done`, `cancelled`; open displays as ready/blocked) |
 | `vine list -t <type>` | Filter by type |
 | `vine list --tag <name>` | Filter by tag |
 | `vine list --all` | Include done and cancelled |
@@ -113,16 +113,27 @@ vine status                            # project summary
 
 | Command | Description |
 |---------|-------------|
-| `vine init` | Initialize a new project (interactive storage selection) |
+| `vine init` | Initialize a new project (interactive storage and git-tracking selection) |
+| `vine init --storage=local --git-tracked=false` | Non-interactive init for scripting/CI |
+| `vine config` | Interactively reconfigure the current project |
+| `vine config show` | Display current project configuration |
+| `vine config set <key> <value>` | Update a configuration value |
 | `vine db list` | List local and global databases |
-| `vine db rename <name>` | Rename a global database |
+| `vine db rename <name>` | Rename the current project's database |
 | `vine doctor` | Diagnose config and integration issues |
 | `vine doctor --fix` | Auto-fix issues where possible |
-| `vine migrate` | Run pending database migrations |
+| `vine migrate` | Move or merge databases between local and global storage |
+| `vine prune` | Clean up temporary files (logs, PID files) |
+| `vine symlink create` | Create symlinks from `.vine/` to the global database |
 
 ## Flags
 
-All commands support `--json` for machine-readable output. Listing commands support `--root` to show only top-level tasks, and `-n` to limit results.
+Most commands support `--json` for machine-readable output. Listing commands support `--root` to show only top-level tasks, and `-n` to limit results.
+
+Global flags available on all commands:
+
+- `--project <name>` — query a global database by name, without needing a `.vine/config` in the current directory.
+- `--remote <name>` — query a remote vine server instead of the local database. See [Remote Access](docs/remote-access.md).
 
 ## Storage modes
 
@@ -131,6 +142,10 @@ Vine supports two storage modes, chosen during `vine init`:
 - **Local** — database lives at `.vine/vine.db` inside the project. Simple, self-contained.
 - **Global** — database lives at `~/.vine/databases/<name>.db`. Shared across git worktrees. Symlinks are created in `.vine/` so file watchers still detect changes.
 
+`vine init` also asks whether to track `.vine/` in git. By default it adds a `.gitignore` so tasks stay local; opt in to share the backlog via version control.
+
+You can switch storage modes later with `vine migrate`.
+
 ## AI agent integration
 
 Vine is built to be used by AI agents as their task management backbone.
@@ -138,11 +153,20 @@ Vine is built to be used by AI agents as their task management backbone.
 ### Claude Code
 
 ```sh
-vine init claude          # add system prompt to .claude/settings.local.json
-vine init claude --hooks  # also add SessionStart and PreCompact hooks
+vine init claude            # system prompt + SessionStart/PreCompact hooks
+vine init claude --no-hooks # system prompt only, skip hooks
 ```
 
-This configures Claude Code to run `vine prime` at session start and before context compaction, giving the agent up-to-date task context automatically.
+This writes into `.claude/settings.local.json`:
+- A **system prompt** telling Claude to run `vine onboard` at session start.
+- **Hooks** (`SessionStart` and `PreCompact`) that automatically run `vine prime` to inject task context into the conversation.
+
+### Cursor / Copilot
+
+```sh
+vine init cursor
+vine init copilot
+```
 
 ### Key commands for agents
 

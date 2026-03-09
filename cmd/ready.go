@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -65,22 +66,26 @@ var readyCmd = &cobra.Command{
 			limit = n
 		}
 
-		fmt.Printf("%s ready:\n\n", utils.Bold(fmt.Sprintf("%d", len(tasks))))
+		statusColor := utils.StatusColor("ready")
+		statusLabel := statusColor.Sprint("ready")
+		fmt.Printf("%s %s:\n\n", utils.Bold(fmt.Sprintf("%d", len(tasks))), statusLabel)
+
+		indent := "              "
+		maxDesc := utils.TermWidth() - len(indent)
+
 		for i := 0; i < limit; i++ {
 			t := tasks[i]
 			displayID := utils.FormatTaskID(projectName, t.ID)
-			typeLabel := ""
-			if t.Type != "task" {
-				typeLabel = " " + utils.Dim("["+t.Type+"]")
-			}
-
-			pLabel := parentLabel(projectName, parents, t.ParentID)
-			subLabel := subtaskLabel(counts, t.ID)
-
-			fmt.Printf("  %s  %s%s%s%s\n", utils.Dim(displayID), t.Name, typeLabel, pLabel, subLabel)
+			fmt.Printf("  %s  %s%s\n", utils.Dim(displayID), utils.Bold(t.Name), utils.TypeLabel(t.Type))
 
 			if t.Description != "" {
-				fmt.Printf("         %s\n", utils.Dim(t.Description))
+				fmt.Printf("%s%s\n", indent, utils.Dim(utils.Truncate(t.Description, maxDesc)))
+			}
+			if pLabel := parentLabel(projectName, parents, t.ParentID); pLabel != "" {
+				fmt.Printf("%s%s\n", indent, strings.TrimLeft(pLabel, " "))
+			}
+			if subLabel := subtaskLabel(counts, t.ID); subLabel != "" {
+				fmt.Printf("%s%s\n", indent, strings.TrimLeft(subLabel, " "))
 			}
 		}
 

@@ -98,15 +98,11 @@ var listCmd = &cobra.Command{
 			displayID := utils.FormatTaskID(projectName, t.ID)
 
 			statusLabel := utils.StatusColor(t.Status).Sprintf("%-12s", t.Status)
-			typeLabel := ""
-			if t.Type != "task" {
-				typeLabel = " " + utils.Dim("["+t.Type+"]")
-			}
 
 			pLabel := parentLabel(projectName, parents, t.ParentID)
 			subLabel := subtaskLabel(counts, t.ID)
 
-			fmt.Printf("  %s  %s  %s%s%s%s\n", utils.Dim(displayID), statusLabel, t.Name, typeLabel, pLabel, subLabel)
+			fmt.Printf("  %s  %s  %s%s%s%s\n", utils.Dim(displayID), statusLabel, t.Name, utils.TypeLabel(t.Type), pLabel, subLabel)
 		}
 
 		if limit < len(enriched) {

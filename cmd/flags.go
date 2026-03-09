@@ -104,6 +104,29 @@ func blockerLabel(project string, blockers []*store.Task) string {
 	return " " + utils.Dim(fmt.Sprintf("(blocked by %s)", summary))
 }
 
+// blockerLines returns indented dim lines listing each blocker, one per line.
+func blockerLines(project string, blockers []*store.Task) string {
+	if len(blockers) == 0 {
+		return ""
+	}
+	indent := "              "
+	prefix := "blocked by "
+	termW := utils.TermWidth()
+	blockedBy := utils.StatusColor("blocked").Sprint("blocked by")
+	var b strings.Builder
+	for _, t := range blockers {
+		ref := utils.FormatTaskID(project, t.ID)
+		// Truncate the blocker name to fit on one line.
+		nameMax := termW - len(indent) - len(prefix) - len(ref) - 1
+		name := t.Name
+		if nameMax > 0 {
+			name = utils.Truncate(name, nameMax)
+		}
+		fmt.Fprintf(&b, "%s%s %s %s\n", indent, blockedBy, utils.Dim(ref), utils.Dim(name))
+	}
+	return b.String()
+}
+
 // emptyIfNil returns an empty slice instead of nil so JSON encodes as [] not null.
 func emptyIfNil(s []string) []string {
 	if s == nil {

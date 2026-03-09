@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -54,15 +55,21 @@ var blockedCmd = &cobra.Command{
 			counts = collectChildCounts(s, tasks)
 		}
 
-		fmt.Printf("%s blocked:\n\n", utils.Bold(fmt.Sprintf("%d", len(tasks))))
+		statusColor := utils.StatusColor("blocked")
+		statusLabel := statusColor.Sprint("blocked")
+		fmt.Printf("%s %s:\n\n", utils.Bold(fmt.Sprintf("%d", len(tasks))), statusLabel)
+
+		indent := "              "
+		maxDesc := utils.TermWidth() - len(indent)
+
 		for _, t := range tasks {
 			displayID := utils.FormatTaskID(projectName, t.ID)
-			typeLabel := ""
-			if t.Type != "task" {
-				typeLabel = " " + utils.Dim("["+t.Type+"]")
+			fmt.Printf("  %s  %s%s\n", utils.Dim(displayID), utils.Bold(t.Name), utils.TypeLabel(t.Type))
+
+			if t.Description != "" {
+				fmt.Printf("%s%s\n", indent, utils.Dim(utils.Truncate(t.Description, maxDesc)))
 			}
 
-			var bLabel string
 			if !IsRemote(cmd) {
 				s := GetStore(cmd)
 				deps, _ := s.DependenciesOf(t.ID)
@@ -74,12 +81,14 @@ var blockedCmd = &cobra.Command{
 						}
 					}
 				}
-				bLabel = blockerLabel(projectName, blockers)
+				if lines := blockerLines(projectName, blockers); lines != "" {
+					fmt.Print(lines)
+				}
 			}
 
-			subLabel := subtaskLabel(counts, t.ID)
-
-			fmt.Printf("  %s  %s%s%s%s\n", utils.Dim(displayID), t.Name, typeLabel, bLabel, subLabel)
+			if subLabel := subtaskLabel(counts, t.ID); subLabel != "" {
+				fmt.Printf("%s%s\n", indent, strings.TrimLeft(subLabel, " "))
+			}
 		}
 
 		return nil

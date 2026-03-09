@@ -58,12 +58,8 @@ var searchCmd = &cobra.Command{
 		for _, t := range tasks {
 			displayID := utils.FormatTaskID(projectName, t.ID)
 			statusLabel := utils.StatusColor(t.Status).Sprint(t.Status)
-			typeLabel := ""
-			if t.Type != "task" {
-				typeLabel = " " + utils.Dim("["+t.Type+"]")
-			}
 			subLabel := subtaskLabel(counts, t.ID)
-			fmt.Printf("  %s  %s  %s%s%s\n", utils.Dim(displayID), statusLabel, t.Name, typeLabel, subLabel)
+			fmt.Printf("  %s  %s  %s%s%s\n", utils.Dim(displayID), statusLabel, t.Name, utils.TypeLabel(t.Type), subLabel)
 		}
 
 		return nil

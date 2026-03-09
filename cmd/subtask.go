@@ -117,11 +117,7 @@ var subtaskListCmd = &cobra.Command{
 		for _, c := range children {
 			displayID := utils.FormatTaskID(projectName, c.ID)
 			statusLabel := utils.StatusColor(c.Status).Sprint(c.Status)
-			typeLabel := ""
-			if c.Type != "task" {
-				typeLabel = " " + utils.Dim("["+c.Type+"]")
-			}
-			fmt.Printf("  %s  %s  %s%s\n", utils.Dim(displayID), statusLabel, c.Name, typeLabel)
+			fmt.Printf("  %s  %s  %s%s\n", utils.Dim(displayID), statusLabel, c.Name, utils.TypeLabel(c.Type))
 		}
 
 		return nil
