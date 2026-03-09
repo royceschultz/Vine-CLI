@@ -104,6 +104,14 @@ func blockerLabel(project string, blockers []*store.Task) string {
 	return " " + utils.Dim(fmt.Sprintf("(blocked by %s)", summary))
 }
 
+// emptyIfNil returns an empty slice instead of nil so JSON encodes as [] not null.
+func emptyIfNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 // PrintOutput prints text normally, or marshals data as JSON if --json is set.
 func PrintOutput(cmd *cobra.Command, text string, data any) {
 	if IsJSON(cmd) {

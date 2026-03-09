@@ -184,7 +184,34 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 			All:      r.URL.Query().Get("all") == "true",
 			RootOnly: r.URL.Query().Get("root") == "true",
 		}
-		return st.ListTasksFiltered(filter)
+		tasks, err := st.ListTasksFiltered(filter)
+		if err != nil {
+			return nil, err
+		}
+
+		ids := make([]string, len(tasks))
+		for i, t := range tasks {
+			ids[i] = t.ID
+		}
+		dependsOn, blocks, _ := st.DependencyIDsForTasks(ids)
+
+		enriched := make([]store.TaskWithDeps, len(tasks))
+		for i, t := range tasks {
+			dIDs := dependsOn[t.ID]
+			if dIDs == nil {
+				dIDs = []string{}
+			}
+			bIDs := blocks[t.ID]
+			if bIDs == nil {
+				bIDs = []string{}
+			}
+			enriched[i] = store.TaskWithDeps{
+				Task:         t,
+				DependsOnIDs: dIDs,
+				BlocksIDs:    bIDs,
+			}
+		}
+		return enriched, nil
 	})
 }
 
@@ -208,13 +235,27 @@ func (s *Server) handleComments(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDependencies(w http.ResponseWriter, r *http.Request) {
 	withStore(w, r, func(st *store.Store) (any, error) {
-		return st.DependenciesOf(r.PathValue("id"))
+		deps, err := st.DependenciesOf(r.PathValue("id"))
+		if err != nil {
+			return nil, err
+		}
+		if deps == nil {
+			deps = []store.Dependency{}
+		}
+		return deps, nil
 	})
 }
 
 func (s *Server) handleDependents(w http.ResponseWriter, r *http.Request) {
 	withStore(w, r, func(st *store.Store) (any, error) {
-		return st.DependentsOf(r.PathValue("id"))
+		deps, err := st.DependentsOf(r.PathValue("id"))
+		if err != nil {
+			return nil, err
+		}
+		if deps == nil {
+			deps = []store.Dependency{}
+		}
+		return deps, nil
 	})
 }
 

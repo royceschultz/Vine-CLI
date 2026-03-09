@@ -96,7 +96,7 @@ var dependencyListCmd = &cobra.Command{
 		}
 
 		if IsJSON(cmd) {
-			var tasks []any
+			tasks := make([]any, 0, len(deps))
 			for _, d := range deps {
 				if t, err := s.GetTask(d.DependsOnID); err == nil {
 					tasks = append(tasks, t)
@@ -142,7 +142,7 @@ var dependencyDependentsCmd = &cobra.Command{
 		}
 
 		if IsJSON(cmd) {
-			var tasks []any
+			tasks := make([]any, 0, len(deps))
 			for _, d := range deps {
 				if t, err := s.GetTask(d.TaskID); err == nil {
 					tasks = append(tasks, t)

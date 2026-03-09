@@ -43,6 +43,13 @@ func (t *Task) ParseMetadata() (*TaskMetadata, error) {
 	return &m, nil
 }
 
+// TaskWithDeps wraps a Task with dependency ID arrays for list output.
+type TaskWithDeps struct {
+	Task
+	DependsOnIDs []string `json:"depends_on_ids"`
+	BlocksIDs    []string `json:"blocks_ids"`
+}
+
 type CreateTaskParams struct {
 	Name        string
 	Description string

@@ -1,6 +1,10 @@
 package store
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/jmoiron/sqlx"
+)
 
 type Dependency struct {
 	TaskID      string `db:"task_id"       json:"task_id"`
@@ -53,4 +57,51 @@ func (s *Store) DependentsOf(taskID string) ([]Dependency, error) {
 		return nil, fmt.Errorf("listing dependents of task %s: %w", taskID, err)
 	}
 	return deps, nil
+}
+
+// DependencyIDsForTasks returns two maps for a batch of task IDs:
+//   - dependsOn: taskID → IDs of tasks it depends on
+//   - blocks: taskID → IDs of tasks it blocks
+//
+// Only tasks with at least one dependency appear in the maps.
+func (s *Store) DependencyIDsForTasks(taskIDs []string) (dependsOn map[string][]string, blocks map[string][]string, err error) {
+	if len(taskIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	query, args, err := sqlx.In(
+		"SELECT task_id, depends_on_id FROM dependencies WHERE task_id IN (?) OR depends_on_id IN (?)",
+		taskIDs, taskIDs,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building dependency IDs query: %w", err)
+	}
+	query = s.db.Rebind(query)
+
+	var rows []struct {
+		TaskID      string `db:"task_id"`
+		DependsOnID string `db:"depends_on_id"`
+	}
+	if err := s.db.Select(&rows, query, args...); err != nil {
+		return nil, nil, fmt.Errorf("querying dependency IDs: %w", err)
+	}
+
+	// Build lookup set for the requested IDs.
+	idSet := make(map[string]bool, len(taskIDs))
+	for _, id := range taskIDs {
+		idSet[id] = true
+	}
+
+	dependsOn = make(map[string][]string)
+	blocks = make(map[string][]string)
+	for _, r := range rows {
+		if idSet[r.TaskID] {
+			dependsOn[r.TaskID] = append(dependsOn[r.TaskID], r.DependsOnID)
+		}
+		if idSet[r.DependsOnID] {
+			blocks[r.DependsOnID] = append(blocks[r.DependsOnID], r.TaskID)
+		}
+	}
+
+	return dependsOn, blocks, nil
 }

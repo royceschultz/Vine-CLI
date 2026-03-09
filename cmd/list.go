@@ -28,31 +28,56 @@ var listCmd = &cobra.Command{
 			RootOnly: IsRoot(cmd),
 		}
 
-		var tasks []store.Task
+		var enriched []store.TaskWithDeps
+		var plainTasks []store.Task
 		var err error
 
 		if IsRemote(cmd) {
 			c, project := GetRemoteClient(cmd)
-			tasks, err = c.ListTasks(project, filter)
+			enriched, err = c.ListTasks(project, filter)
 		} else {
 			s := GetStore(cmd)
-			tasks, err = s.ListTasksFiltered(filter)
+			plainTasks, err = s.ListTasksFiltered(filter)
 		}
 		if err != nil {
 			return err
 		}
 
+		// For local mode, enrich tasks with dependency IDs.
+		if !IsRemote(cmd) {
+			s := GetStore(cmd)
+			ids := make([]string, len(plainTasks))
+			for i, t := range plainTasks {
+				ids[i] = t.ID
+			}
+			dependsOn, blocks, _ := s.DependencyIDsForTasks(ids)
+			enriched = make([]store.TaskWithDeps, len(plainTasks))
+			for i, t := range plainTasks {
+				enriched[i] = store.TaskWithDeps{
+					Task:         t,
+					DependsOnIDs: emptyIfNil(dependsOn[t.ID]),
+					BlocksIDs:    emptyIfNil(blocks[t.ID]),
+				}
+			}
+		}
+
 		if IsJSON(cmd) {
-			PrintOutput(cmd, "", tasks)
+			PrintOutput(cmd, "", enriched)
 			return nil
 		}
 
-		if len(tasks) == 0 {
+		if len(enriched) == 0 {
 			fmt.Println("No tasks found.")
 			return nil
 		}
 
 		projectName := getProjectName(cmd)
+
+		// Extract plain tasks for display helpers.
+		tasks := make([]store.Task, len(enriched))
+		for i, e := range enriched {
+			tasks[i] = e.Task
+		}
 
 		var counts map[string]int
 		var parents map[string]*store.Task
@@ -62,13 +87,13 @@ var listCmd = &cobra.Command{
 			parents = collectParents(s, tasks)
 		}
 
-		limit := len(tasks)
+		limit := len(enriched)
 		if n > 0 && n < limit {
 			limit = n
 		}
 
 		for i := 0; i < limit; i++ {
-			t := tasks[i]
+			t := enriched[i].Task
 			displayID := utils.FormatTaskID(projectName, t.ID)
 
 			statusLabel := utils.StatusColor(t.Status).Sprintf("%-12s", t.Status)
@@ -83,8 +108,8 @@ var listCmd = &cobra.Command{
 			fmt.Printf("  %s  %s  %s%s%s%s\n", utils.Dim(displayID), statusLabel, t.Name, typeLabel, pLabel, subLabel)
 		}
 
-		if limit < len(tasks) {
-			fmt.Printf("\n  %s\n", utils.Dim(fmt.Sprintf("… and %d more (use -n or --all)", len(tasks)-limit)))
+		if limit < len(enriched) {
+			fmt.Printf("\n  %s\n", utils.Dim(fmt.Sprintf("… and %d more (use -n or --all)", len(enriched)-limit)))
 		}
 
 		return nil

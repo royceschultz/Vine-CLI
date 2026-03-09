@@ -121,7 +121,7 @@ func (c *Client) ListProjects() ([]string, error) {
 }
 
 // ListTasks returns tasks for a project with optional filtering.
-func (c *Client) ListTasks(project string, filter store.TaskFilter) ([]store.Task, error) {
+func (c *Client) ListTasks(project string, filter store.TaskFilter) ([]store.TaskWithDeps, error) {
 	q := url.Values{}
 	if filter.Status != "" {
 		q.Set("status", filter.Status)
@@ -139,7 +139,7 @@ func (c *Client) ListTasks(project string, filter store.TaskFilter) ([]store.Tas
 		q.Set("root", "true")
 	}
 
-	var tasks []store.Task
+	var tasks []store.TaskWithDeps
 	if err := c.get("/api/projects/"+project+"/tasks", q, &tasks); err != nil {
 		return nil, err
 	}
