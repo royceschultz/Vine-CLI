@@ -10,8 +10,8 @@ Vine supports querying tasks on remote machines. By default, connections are sec
 │                  │                          │                  │
 │  vine CLI        │  ssh -L port:lo:port     │  vine remote     │
 │  vine manager    │  ──────────────────►     │  serve           │
-│  (Electron app)  │  HTTP over tunnel        │  127.0.0.1:7633  │
-│                  │                          │  ~/.vine/        │
+│  (Electron app)  │  HTTP + WebSocket        │  127.0.0.1:7633  │
+│                  │  over tunnel             │  ~/.vine/        │
 │                  │                          │  databases/*.db  │
 └─────────────────┘                          └─────────────────┘
 ```
@@ -135,6 +135,7 @@ vine remote logs -f   # follow log output
 **PID file:** `~/.vine/server.pid`
 **Log file:** `~/.vine/server.log` (rotates at 10MB, keeps 3 old files)
 **Config file:** `~/.vine/server.json` (saved on start, used by restart)
+**Tunnel state:** `~/.vine/tunnels/<name>.json` (client-side, tracks persistent SSH tunnels)
 
 ### Process safeguards
 
@@ -157,6 +158,8 @@ vine remote projects <name>
 vine remote connect <name>            # open persistent SSH tunnel
 vine remote disconnect <name>         # close tunnel
 vine remote disconnect-all            # close all tunnels
+vine remote watch <name>              # watch all projects for changes
+vine remote watch <name> --project X  # watch one project
 ```
 
 ### Configuration file
@@ -217,6 +220,29 @@ vine status --project my-project
 vine list --project my-project
 ```
 
+## Watching for Changes
+
+The server supports real-time change notifications via WebSocket. When a project's SQLite database is modified, the server broadcasts an event to all connected watchers. The file watcher is lazy — it only monitors the filesystem when at least one client is connected.
+
+```bash
+# Watch all projects on a remote
+vine remote watch desktop
+
+# Watch a specific project
+vine remote watch desktop --project myapp
+
+# JSON output (useful for piping into other tools)
+vine remote watch desktop --json
+```
+
+Events look like:
+
+```json
+{"type": "changed", "project": "myapp", "timestamp": "2026-03-08T18:00:00Z"}
+```
+
+The watch command automatically reconnects if the connection drops (e.g., network interruption). Changes are debounced (100ms) to avoid flooding clients during bulk operations.
+
 ## API Reference
 
 The HTTP API is read-only and returns JSON. All endpoints are under `/api/`.
@@ -238,6 +264,8 @@ The HTTP API is read-only and returns JSON. All endpoints are under `/api/`.
 | `GET /api/projects/{project}/status` | Task summary (query param: `detailed`) |
 | `GET /api/projects/{project}/search` | Search tasks (query param: `q`) |
 | `GET /api/projects/{project}/tags` | All tags with counts |
+| `GET /api/watch` | WebSocket: watch all projects for changes |
+| `GET /api/projects/{project}/watch` | WebSocket: watch a specific project for changes |
 
 ### Authentication
 
