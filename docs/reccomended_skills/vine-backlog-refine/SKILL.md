@@ -44,13 +44,16 @@ This is a collaborative refinement — the agent should present findings and pro
 vine list --root                     # top-level issues only
 vine list                            # all open issues
 vine list -t epic                    # list all epics
+vine list -s ready                   # tasks ready to work on
+vine list -s blocked                 # tasks waiting on dependencies
+vine list --grep "search term"       # filter by task name
 vine status                          # project summary with counts
 ```
 
 ### Inspect an issue
 
 ```bash
-vine show <id>                       # full details of an issue
+vine show <id> [id...]               # full details (accepts multiple IDs)
 vine children <id>                   # list children/subtasks of an issue
 ```
 

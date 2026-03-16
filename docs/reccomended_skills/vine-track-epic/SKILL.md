@@ -51,8 +51,11 @@ This means `blocked-id` cannot start until `blocker-id` is completed. The first 
 
 ```bash
 vine list -t epic                      # list all epics
+vine list -s ready                     # tasks ready to work on
+vine list -s blocked                   # tasks waiting on dependencies
+vine list --grep "search term"         # filter by task name
 vine status                            # project summary with counts
-vine show <epic-id>                    # details of a single epic
+vine show <epic-id> [id...]            # details of one or more tasks
 vine children <epic-id>                # subtasks of a single epic
 ```
 

@@ -17,6 +17,7 @@ var listCmd = &cobra.Command{
 		status, _ := cmd.Flags().GetString("status")
 		taskType, _ := cmd.Flags().GetString("type")
 		tag, _ := cmd.Flags().GetString("tag")
+		grep, _ := cmd.Flags().GetString("grep")
 		showAll, _ := cmd.Flags().GetBool("all")
 		n, _ := cmd.Flags().GetInt("number")
 
@@ -24,6 +25,7 @@ var listCmd = &cobra.Command{
 			Status:   status,
 			Type:     taskType,
 			Tag:      tag,
+			Grep:     grep,
 			All:      showAll,
 			RootOnly: IsRoot(cmd),
 		}
@@ -47,6 +49,19 @@ var listCmd = &cobra.Command{
 		if !IsRemote(cmd) {
 			s := GetStore(cmd)
 			s.EnrichEffectiveStatus(plainTasks)
+
+			// Post-filter for effective statuses (ready/blocked) which can't be
+			// filtered at the SQL level since they're computed from dependencies.
+			if filter.IsEffectiveStatus() {
+				filtered := plainTasks[:0]
+				for _, t := range plainTasks {
+					if t.Status == filter.Status {
+						filtered = append(filtered, t)
+					}
+				}
+				plainTasks = filtered
+			}
+
 			ids := make([]string, len(plainTasks))
 			for i, t := range plainTasks {
 				ids[i] = t.ID
@@ -114,9 +129,10 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	listCmd.Flags().StringP("status", "s", "", "filter by status (open, in_progress, done, cancelled); open tasks display as ready/blocked")
+	listCmd.Flags().StringP("status", "s", "", "filter by status (ready, blocked, open, in_progress, done, cancelled)")
 	listCmd.Flags().StringP("type", "t", "", "filter by type (feature, bug, task, epic)")
 	listCmd.Flags().String("tag", "", "filter by tag")
+	listCmd.Flags().String("grep", "", "filter by substring match on task name")
 	listCmd.Flags().Bool("all", false, "include done and cancelled tasks")
 	listCmd.Flags().IntP("number", "n", 0, "max number of tasks to show")
 	AddRootFlag(listCmd)

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -27,6 +28,9 @@ var updateCmd = &cobra.Command{
 
 		if cmd.Flags().Changed("name") {
 			v, _ := cmd.Flags().GetString("name")
+			if strings.TrimSpace(v) == "" {
+				return fmt.Errorf("--name cannot be empty")
+			}
 			params.Name = &v
 			changed = true
 		}

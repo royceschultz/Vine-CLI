@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"vine/store"
 	"vine/utils"
 )
 
@@ -74,6 +75,32 @@ var closeCmd = &cobra.Command{
 
 		if IsJSON(cmd) {
 			PrintOutput(cmd, "", closed)
+		}
+
+		// Hint if a parent task's subtasks are now all complete.
+		if !IsJSON(cmd) {
+			hintedParents := map[string]bool{}
+			for _, c := range closed {
+				task, ok := c.(*store.Task)
+				if !ok || task.ParentID == nil {
+					continue
+				}
+				parentID := *task.ParentID
+				if hintedParents[parentID] {
+					continue
+				}
+				hintedParents[parentID] = true
+				parent, err := s.GetTask(parentID)
+				if err != nil || parent.Status == "done" || parent.Status == "cancelled" {
+					continue
+				}
+				incomplete, err := s.IncompleteChildTasks(parentID)
+				if err != nil || len(incomplete) > 0 {
+					continue
+				}
+				parentDisplay := utils.FormatTaskID(projectName, parentID)
+				fmt.Printf("\nhint: all subtasks of %s are done — run vine close %s to close it\n", parentDisplay, parentDisplay)
+			}
 		}
 
 		return nil

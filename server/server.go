@@ -181,6 +181,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 			Status:   r.URL.Query().Get("status"),
 			Type:     r.URL.Query().Get("type"),
 			Tag:      r.URL.Query().Get("tag"),
+			Grep:     r.URL.Query().Get("grep"),
 			All:      r.URL.Query().Get("all") == "true",
 			RootOnly: r.URL.Query().Get("root") == "true",
 		}
@@ -189,6 +190,17 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 			return nil, err
 		}
 		st.EnrichEffectiveStatus(tasks)
+
+		// Post-filter for effective statuses (ready/blocked).
+		if filter.IsEffectiveStatus() {
+			filtered := tasks[:0]
+			for _, t := range tasks {
+				if t.Status == filter.Status {
+					filtered = append(filtered, t)
+				}
+			}
+			tasks = filtered
+		}
 
 		ids := make([]string, len(tasks))
 		for i, t := range tasks {

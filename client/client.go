@@ -132,6 +132,9 @@ func (c *Client) ListTasks(project string, filter store.TaskFilter) ([]store.Tas
 	if filter.Tag != "" {
 		q.Set("tag", filter.Tag)
 	}
+	if filter.Grep != "" {
+		q.Set("grep", filter.Grep)
+	}
 	if filter.All {
 		q.Set("all", "true")
 	}

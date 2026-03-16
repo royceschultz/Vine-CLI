@@ -131,11 +131,27 @@ func (s *Store) ListTasks(status string) ([]Task, error) {
 
 // TaskFilter specifies criteria for listing tasks.
 type TaskFilter struct {
-	Status   string // exact status match
+	Status   string // exact status match; also accepts "ready" and "blocked" (effective statuses)
 	Type     string // exact type match
 	Tag      string // tag name
+	Grep     string // substring match on task name
 	All      bool   // include done/cancelled (default: hide them)
 	RootOnly bool   // only tasks with no parent
+}
+
+// IsEffectiveStatus returns true if the filter's Status is a computed status
+// ("ready" or "blocked") rather than a stored one.
+func (f TaskFilter) IsEffectiveStatus() bool {
+	return f.Status == "ready" || f.Status == "blocked"
+}
+
+// SQLStatus returns the status to use in SQL queries. For effective statuses
+// ("ready"/"blocked"), this returns "open" since those are derived from open tasks.
+func (f TaskFilter) SQLStatus() string {
+	if f.IsEffectiveStatus() {
+		return "open"
+	}
+	return f.Status
 }
 
 func (s *Store) ListTasksFiltered(f TaskFilter) ([]Task, error) {
@@ -150,7 +166,7 @@ func (s *Store) ListTasksFiltered(f TaskFilter) ([]Task, error) {
 
 	if f.Status != "" {
 		where = append(where, "t.status = ?")
-		args = append(args, f.Status)
+		args = append(args, f.SQLStatus())
 	} else if !f.All {
 		where = append(where, "t.status NOT IN ('done', 'cancelled')")
 	}
@@ -163,6 +179,11 @@ func (s *Store) ListTasksFiltered(f TaskFilter) ([]Task, error) {
 	if f.Tag != "" {
 		where = append(where, "tg.name = ?")
 		args = append(args, f.Tag)
+	}
+
+	if f.Grep != "" {
+		where = append(where, "t.name LIKE '%' || ? || '%'")
+		args = append(args, f.Grep)
 	}
 
 	if f.RootOnly {
@@ -374,6 +395,20 @@ func (s *Store) SearchTasks(query string) ([]Task, error) {
 		return nil, fmt.Errorf("searching tasks: %w", err)
 	}
 	return tasks, nil
+}
+
+// DeleteTask permanently removes a task and all its children (cascading),
+// along with associated dependencies, tags, and comments.
+func (s *Store) DeleteTask(id string) error {
+	result, err := s.db.Exec("DELETE FROM tasks WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("deleting task %s: %w", id, err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("task %s not found", id)
+	}
+	return nil
 }
 
 func (s *Store) SetParent(childID string, parentID *string) (*Task, error) {

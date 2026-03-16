@@ -40,6 +40,12 @@ var childrenCmd = &cobra.Command{
 			return err
 		}
 
+		// Enrich effective status (open → ready/blocked) for local mode.
+		if !IsRemote(cmd) {
+			s := GetStore(cmd)
+			s.EnrichEffectiveStatus(children)
+		}
+
 		if IsJSON(cmd) {
 			PrintOutput(cmd, "", map[string]any{
 				"parent":   parent,

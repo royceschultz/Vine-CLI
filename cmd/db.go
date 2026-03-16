@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -19,7 +20,13 @@ var dbListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List local and global databases",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		found := false
+		type dbEntry struct {
+			Name    string `json:"name"`
+			Path    string `json:"path"`
+			Storage string `json:"storage"`
+		}
+
+		var databases []dbEntry
 
 		// Check for local database.
 		cwd, err := os.Getwd()
@@ -33,8 +40,11 @@ var dbListCmd = &cobra.Command{
 				dbPath, pathErr := config.DatabasePath(projectRoot, cfg)
 				if pathErr == nil {
 					if _, err := os.Stat(dbPath); err == nil {
-						fmt.Printf("Local (%s):\n  %s\n", cfg.Storage, dbPath)
-						found = true
+						databases = append(databases, dbEntry{
+							Name:    cfg.Database,
+							Path:    dbPath,
+							Storage: string(cfg.Storage),
+						})
 					}
 				}
 			}
@@ -50,25 +60,51 @@ var dbListCmd = &cobra.Command{
 			return fmt.Errorf("reading global databases dir: %w", err)
 		}
 
-		var globals []string
+		// Track which global DBs we already listed as the local project's DB.
+		localGlobal := ""
+		if len(databases) > 0 && databases[0].Storage == string(config.StorageGlobal) {
+			localGlobal = databases[0].Name
+		}
+
 		for _, e := range entries {
 			if !e.IsDir() && filepath.Ext(e.Name()) == ".db" {
-				globals = append(globals, e.Name()[:len(e.Name())-3])
+				name := e.Name()[:len(e.Name())-3]
+				if name == localGlobal {
+					continue // already listed as the local project DB
+				}
+				databases = append(databases, dbEntry{
+					Name:    name,
+					Path:    filepath.Join(globalDir, e.Name()),
+					Storage: string(config.StorageGlobal),
+				})
 			}
 		}
 
-		if len(globals) > 0 {
-			fmt.Printf("Global (~/.vine/databases/):\n")
-			for _, name := range globals {
-				fmt.Printf("  %s\n", name)
+		if len(databases) == 0 {
+			PrintOutput(cmd, "No databases found.", []dbEntry{})
+			return nil
+		}
+
+		var lines []string
+		localPrinted := false
+		globalPrinted := false
+		for _, db := range databases {
+			if db.Storage == string(config.StorageGlobal) {
+				if !globalPrinted {
+					lines = append(lines, "Global (~/.vine/databases/):")
+					globalPrinted = true
+				}
+				lines = append(lines, fmt.Sprintf("  %s", db.Name))
+			} else {
+				if !localPrinted {
+					lines = append(lines, fmt.Sprintf("Local (%s):", db.Storage))
+					localPrinted = true
+				}
+				lines = append(lines, fmt.Sprintf("  %s", db.Path))
 			}
-			found = true
 		}
 
-		if !found {
-			fmt.Println("No databases found.")
-		}
-
+		PrintOutput(cmd, strings.Join(lines, "\n"), databases)
 		return nil
 	},
 }

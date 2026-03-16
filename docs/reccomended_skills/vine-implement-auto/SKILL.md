@@ -17,7 +17,7 @@ Work through multiple vine tasks autonomously. Implement each task, commit, and 
    d. **Commit.** Make appropriately-sized commits at meaningful checkpoints. See the committing section below.
    e. **Flag testable work.** When something is ready for the user to test, explicitly say so — don't bury it. See the testing section below.
    f. **Create follow-ups if needed.** If the task is larger than expected or reveals future work, create follow-up tasks. But stay focused on implementing — project management is a last resort. See the follow-up section below.
-   g. **Close the task.** `vine close <id>` and move on. If this completes the last open sub-task under a parent, review the parent and consider closing it too.
+   g. **Close the task.** `vine close <id>` and move on. The CLI will hint when all subtasks of a parent are done — follow the hint to close the parent too.
 3. **Check in periodically.** After completing a few tasks, give the user a brief status update: what's done, what's testable, and what's next.
 
 ## Committing
@@ -75,12 +75,14 @@ Not every follow-up needs a dependency — only add them when there's a real ord
 
 ```bash
 vine ready                               # tasks ready to work on
-vine show <id>                           # full task details
+vine show <id> [id...]                   # full task details (accepts multiple IDs)
 vine pick <id>                           # claim a task (sets it to in_progress)
 vine close <id>                          # mark task as done
 vine create "Title" -t task -d "..." --parent <parent-id>   # create follow-up
 vine children <parent-id>               # see subtasks for context
 vine list -t epic                        # check epic list
+vine list -s blocked                     # see what's waiting on dependencies
+vine list --grep "search term"           # filter by task name
 vine status                              # check overall project progress
 ```
 

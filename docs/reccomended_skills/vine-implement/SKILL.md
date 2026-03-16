@@ -70,9 +70,9 @@ Not every follow-up needs a dependency — only add them when there's a real ord
 
 ```bash
 vine ready                               # tasks ready to work on
-vine show <id>                           # full task details
+vine show <id> [id...]                   # full task details (accepts multiple IDs)
 vine pick <id>                           # claim a task (sets it to in_progress)
-vine close <id>                          # mark task as done
+vine close <id>                          # mark task as done (hints when parent is ready to close)
 vine create "Title" -t task -d "..." --parent <parent-id>   # create follow-up
 vine children <parent-id>               # see sibling tasks for context
 ```
